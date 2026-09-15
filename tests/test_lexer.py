@@ -16,7 +16,12 @@ Tests cover:
 For each test, expected tokens are provided for validation.
 """
 
-from lexer import Lexer, TokenType
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.lexer.lexer import Lexer, TokenType
 
 
 def test_case_1_valid_keywords():
