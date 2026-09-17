@@ -13,12 +13,12 @@ Parser Construction Strategy:
 
 Grammar Rules Implemented:
 (1)  Program        → StatementList
-(2)  StatementList   → Statement StatementList | Statement
-(4-7) Statement      → LoadStmt | SelectStmt | FilterStmt | PlotStmt
+(2-3)  StatementList   → Statement StatementList | Statement
+(4-7) Statement      → LoadStmt | SelectStmt | FilterStmt | VisualizeStmt
 (8)  LoadStmt        → LOAD STRING_LIT
 (9)  SelectStmt       → SELECT ColumnList
 (10) FilterStmt       → FILTER ID RELOP Value
-(11) PlotStmt         → PLOT ChartType ColumnList
+(11) PlotStmt         → VISUALIZE ChartType ColumnList
 (12-14) ChartType     → BAR | LINE | SCATTER
 (15-16) ColumnList    → ID COMMA ColumnList | ID
 (17-22) RELOP         → GT | LT | EQ | GE | LE | NEQ
@@ -26,8 +26,13 @@ Grammar Rules Implemented:
 """
 
 from dataclasses import dataclass
+import sys
+from pathlib import Path
 from typing import List, Optional, Union
-from lexer import Token, TokenType, Lexer
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.lexer.lexer import Token, TokenType, Lexer
 
 
 # ============================================================================
@@ -90,11 +95,11 @@ class FilterStmt(ASTNode):
     Filters data based on a relational expression.
     
     Attributes:
-        column: The column identifier to filter on
+        column_name: The column identifier to filter on
         operator: The relational operator (GT, LT, EQ, GE, LE, NEQ)
         value: The Value node representing the comparison value
     """
-    column: str
+    column_name: str
     operator: str  # Operator name (e.g., "GT", "LT", "EQ")
     value: 'Value'
 
@@ -234,7 +239,7 @@ class Parser:
         - LOAD → LoadStmt
         - SELECT → SelectStmt
         - FILTER → FilterStmt
-        - PLOT → PlotStmt
+        - VISUALIZE → PlotStmt
         
         Returns:
             One of: LoadStmt, SelectStmt, FilterStmt, or PlotStmt
@@ -250,10 +255,10 @@ class Parser:
             return self._parse_select_stmt()
         elif token_type == TokenType.FILTER:
             return self._parse_filter_stmt()
-        elif token_type == TokenType.PLOT:
+        elif token_type == TokenType.VISUALIZE:
             return self._parse_plot_stmt()
         else:
-            self._error(f"Expected statement (LOAD, SELECT, FILTER, or PLOT), got {self._current_token().lexeme}")
+            self._error(f"Expected statement (LOAD, SELECT, FILTER, or VISUALIZE), got {self._current_token().lexeme}")
     
     # ========================================================================
     # Rule (8): LoadStmt → LOAD STRING_LIT
@@ -361,7 +366,7 @@ class Parser:
         value = self._parse_value()
         
         return FilterStmt(
-            column=column_name,
+            column_name=column_name,
             operator=operator,
             value=value,
             line=line,
@@ -376,11 +381,11 @@ class Parser:
         """
         Parse a PLOT statement (Rule 11).
         
-        Syntax: PLOT <chart_type> <column_1>, <column_2>, ...
+        Syntax: VISUALIZE <chart_type> <column_1>, <column_2>, ...
         
         Example:
-            PLOT BAR revenue, expenses
-            PLOT LINE month, sales
+            VISUALIZE BAR revenue, expenses
+            VISUALIZE LINE month, sales
         
         Returns:
             PlotStmt node with chart type and column list
@@ -391,8 +396,8 @@ class Parser:
         line = self._current_token().line
         column = self._current_token().column
         
-        # Consume PLOT keyword
-        self._consume(TokenType.PLOT, "Expected PLOT keyword")
+        # Consume VISUALIZE keyword
+        self._consume(TokenType.VISUALIZE, "Expected VISUALIZE keyword")
         
         # Parse chart type
         chart_type = self._parse_chart_type()
@@ -683,7 +688,7 @@ def print_ast(node: ASTNode, indent: int = 0) -> None:
     
     elif isinstance(node, FilterStmt):
         print(f"{prefix}FilterStmt")
-        print(f"{prefix}  column: {node.column}")
+        print(f"{prefix}  column: {node.column_name}")
         print(f"{prefix}  operator: {node.operator}")
         print(f"{prefix}  value:")
         print_ast(node.value, indent + 2)
@@ -704,7 +709,7 @@ def main():
     source = '''LOAD "sales_data.csv"
 SELECT revenue, expenses, profit
 FILTER revenue > 1000
-PLOT BAR revenue, expenses'''
+VISUALIZE BAR revenue, expenses'''
     
     print("=" * 70)
     print("DATALANG PARSER EXAMPLE")
