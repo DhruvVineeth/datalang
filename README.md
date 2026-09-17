@@ -29,7 +29,7 @@ The language-processing system converts DataLang programs into an intermediate r
 
 ---
 
-## 2. Example DataLang Program
+##  Example DataLang Program
 
 A basic DataLang program can be written as:
 
