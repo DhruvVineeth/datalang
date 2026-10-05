@@ -1,4 +1,4 @@
-LOAD1 "sales.csv" AS sales;
+LOAD "sales.csv" AS sales;
 VISUALIZE BAR OF product FROM sales;
 VISUALIZE LINE OF revenue FROM sales;
 VISUALIZE SCATTER OF quantity FROM sales;
