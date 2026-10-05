@@ -1,0 +1,4 @@
+LOAD "sales.csv" AS sales;
+SELECT product, revenue FROM sales;
+FILTER sales WHERE revenue > 1000;
+VISUALIZE BAR OF product FROM sales;

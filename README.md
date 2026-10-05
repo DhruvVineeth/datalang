@@ -1,6 +1,46 @@
 
 # DataLang — Language Specification
 
+## Running the current implementation
+
+Install dependencies with `python -m pip install -r requirements.txt`, then run:
+
+```powershell
+python -m src.main examples/visualizations.dl
+```
+
+The current compiler uses semicolons and the following single-column visualization syntax:
+
+```text
+LOAD "sales.csv" AS sales;
+VISUALIZE BAR OF product FROM sales;
+VISUALIZE LINE OF revenue FROM sales;
+VISUALIZE SCATTER OF quantity FROM sales;
+```
+
+BAR displays counts for each distinct non-null value. LINE and SCATTER require
+numeric columns and display values against their zero-based positions in the
+current table. Plots use the table produced by preceding SELECT/FILTER operations.
+Null values are omitted; empty or entirely null series report a runtime error.
+Each chart opens in Matplotlib; close its window to continue execution.
+PIE is recognized by the grammar but rejected as unsupported during semantic analysis.
+
+Use `--ast` or `--ir` to inspect compilation, or `--no-execute` to compile without
+loading runtime tables or opening charts. For embedding or headless use,
+`VisualizationModule(show=False).plot(frame, chart_type, column)` returns a
+Matplotlib figure, which can be saved with `figure.savefig("chart.png")` and closed
+with `matplotlib.pyplot.close(figure)`.
+
+Errors are reported by stage: **Lexical** (invalid characters/unterminated strings),
+**Syntax** (invalid statements/missing delimiters), **Semantic** (unknown datasets,
+columns, incompatible types, unavailable CSV schemas), and **Runtime** (failed
+CSV reads, invalid runtime operations, or plotting failures). Compiler errors
+include source locations; runtime errors include the IR instruction and operation.
+Failed compilation or execution returns exit status 1.
+
+Run the tests with `python -m pytest tests`. Visualization tests use the Agg backend
+and inspect actual chart data without opening windows.
+
 **DataLang: A Domain-Specific Language for Data Analysis and Visualization**
 
 DataLang is a domain-specific language (DSL) designed to simplify common data-analysis and visualization operations through an intuitive, task-oriented syntax.

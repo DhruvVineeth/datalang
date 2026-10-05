@@ -126,6 +126,8 @@ class Lexer:
         self.line = 1      # Current line number (1-indexed)
         self.column = 0    # Current column number (0-indexed)
         self.tokens: List[Token] = []  # Accumulated tokens
+        self._token_line = 1
+        self._token_column = 0
         
         # Keywords mapping: maps lowercase keywords to their token types
         self.keywords = {
@@ -167,6 +169,7 @@ class Lexer:
         while not self._is_at_end():
             self._scan_token()
         
+        self._token_line, self._token_column = self.line, self.column
         self._add_token(TokenType.EOF, '')
         return self.tokens
     
@@ -186,6 +189,7 @@ class Lexer:
             return
         
         current = self._current_char()
+        self._token_line, self._token_column = self.line, self.column
         
         # Two-character operators: ==, !=, <=, >=
         if current in '=!<>':
@@ -230,8 +234,6 @@ class Lexer:
             
             # Handle newline: increment line counter, reset column
             if current == '\n':
-                self.line += 1
-                self.column = 0
                 self._advance()
                 continue
             
@@ -433,8 +435,12 @@ class Lexer:
         to properly update line numbers.
         """
         if not self._is_at_end():
+            if self._current_char() == '\n':
+                self.line += 1
+                self.column = 0
+            else:
+                self.column += 1
             self.position += 1
-            self.column += 1
     
     def _is_at_end(self) -> bool:
         """
@@ -461,8 +467,8 @@ class Lexer:
             type=token_type,
             lexeme=lexeme,
             literal=literal,
-            line=self.line,
-            column=self.column - len(lexeme)
+            line=self._token_line,
+            column=self._token_column
         )
         self.tokens.append(token)
     
@@ -480,8 +486,8 @@ class Lexer:
             type=TokenType.ERROR,
             lexeme=message,
             literal=None,
-            line=self.line,
-            column=self.column
+            line=self._token_line,
+            column=self._token_column
         )
         self.tokens.append(token)
 

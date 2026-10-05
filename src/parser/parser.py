@@ -1,28 +1,43 @@
 """
 DataLang Parser Implementation
 
-A recursive descent parser for the DataLang DSL that builds an Abstract Syntax Tree (AST)
-from a token stream produced by the Lexer.
+A recursive-descent parser for the DataLang DSL that builds an Abstract Syntax
+Tree (AST) from the token stream produced by the Lexer. This implementation
+follows the Phase 1 language specification exactly:
 
-Parser Construction Strategy:
-1. Each grammar rule becomes a parser method
-2. Terminal symbols (tokens) are matched via consume()
-3. Non-terminals recursively call their corresponding parse methods
-4. Left recursion is eliminated (handled via iteration)
-5. Errors are reported with token location information
+    LOAD "<file>" AS <identifier> ;
+    FILTER <identifier> WHERE <condition> ;
+    SELECT <col_list> FROM <identifier> ;
+    VISUALIZE <chart_type> OF <column> FROM <identifier> ;
 
-Grammar Rules Implemented:
-(1)  Program        → StatementList
-(2-3)  StatementList   → Statement StatementList | Statement
-(4-7) Statement      → LoadStmt | SelectStmt | FilterStmt | VisualizeStmt
-(8)  LoadStmt        → LOAD STRING_LIT
-(9)  SelectStmt       → SELECT ColumnList
-(10) FilterStmt       → FILTER ID RELOP Value
-(11) PlotStmt         → VISUALIZE ChartType ColumnList
-(12-14) ChartType     → BAR | LINE | SCATTER
-(15-16) ColumnList    → ID COMMA ColumnList | ID
-(17-22) RELOP         → GT | LT | EQ | GE | LE | NEQ
-(23-25) Value         → INT_LIT | FLOAT_LIT | STRING_LIT
+AGGREGATE is part of the language proposal but is intentionally left
+unimplemented here, since it is out of scope for this AST
+(Program / LoadStmt / SelectStmt / FilterStmt / PlotStmt only). No language
+features beyond the specification (e.g. arithmetic operators, extra
+statement forms) have been added.
+
+Grammar Implemented
+--------------------
+(1)   Program        -> StatementList
+(2-3) StatementList  -> Statement StatementList | Statement          (iterative)
+(4-7) Statement      -> LoadStmt | SelectStmt | FilterStmt | VisualizeStmt
+(8)   LoadStmt       -> LOAD STRING_LIT AS ID SEMI
+(9)   SelectStmt     -> SELECT ColumnList FROM ID SEMI
+(10)  FilterStmt     -> FILTER ID WHERE Condition SEMI
+(11)  VisualizeStmt  -> VISUALIZE ChartType OF ID FROM ID SEMI
+(12-15) ChartType    -> BAR | LINE | SCATTER | PIE
+(16-17) ColumnList   -> ID COMMA ColumnList | ID                     (iterative)
+(18)  Condition      -> OrExpr
+(19-20) OrExpr       -> AndExpr OR OrExpr | AndExpr                  (iterative)
+(21-22) AndExpr      -> UnaryExpr AND AndExpr | UnaryExpr            (iterative)
+(23-24) UnaryExpr    -> NOT UnaryExpr | Comparison
+(25)  Comparison     -> ID RelOp Value
+(26-31) RelOp        -> EQ | NEQ | LT | GT | LE | GE
+(32-34) Value        -> INT_LIT | FLOAT_LIT | STRING_LIT
+
+Note on rule (11): the language specification's general form for VISUALIZE is
+`VISUALIZE <chart_type> OF <column> FROM <identifier>` — a single column, not
+a column list, distinguishing it from SELECT.
 """
 
 from dataclasses import dataclass
@@ -38,12 +53,11 @@ from src.lexer.lexer import Token, TokenType, Lexer
 # ============================================================================
 # ABSTRACT SYNTAX TREE (AST) NODE DEFINITIONS
 # ============================================================================
-# These classes represent the structure of a parsed DataLang program.
-# Each node type corresponds to a grammar rule (non-terminal).
 
 @dataclass
 class ASTNode:
-    """Base class for all AST nodes. Provides location tracking."""
+    """Base class for all AST nodes. Carries source-location info for
+    downstream error reporting (semantic analysis, IR generation, etc.)."""
     line: int
     column: int
 
@@ -51,12 +65,10 @@ class ASTNode:
 @dataclass
 class Program(ASTNode):
     """
-    Root node of the AST.
-    
-    Represents Rule (1): Program → StatementList
-    
+    Rule (1): Program -> StatementList
+
     Attributes:
-        statements: List of Statement nodes (LoadStmt, SelectStmt, FilterStmt, or PlotStmt)
+        statements: The top-level sequence of statements in the program.
     """
     statements: List['Statement']
 
@@ -64,77 +76,138 @@ class Program(ASTNode):
 @dataclass
 class LoadStmt(ASTNode):
     """
-    Represents Rule (8): LoadStmt → LOAD STRING_LIT
-    
-    Loads a data source into the system.
-    
+    Rule (8): LoadStmt -> LOAD STRING_LIT AS ID SEMI
+
+    Example:
+        LOAD "sales.csv" AS sales;
+
     Attributes:
-        file_path: The string literal representing the file path (e.g., "data.csv")
+        file_path: The quoted file path (escape sequences already resolved).
+        variable: The identifier the dataset is bound to.
     """
     file_path: str
+    variable: str
 
 
 @dataclass
 class SelectStmt(ASTNode):
     """
-    Represents Rule (9): SelectStmt → SELECT ColumnList
-    
-    Selects specific columns from the data.
-    
+    Rule (9): SelectStmt -> SELECT ColumnList FROM ID SEMI
+
+    Example:
+        SELECT Region, Revenue FROM sales;
+
     Attributes:
-        columns: List of column names (identifiers)
+        columns: The list of column names to select.
+        source: The dataset identifier the columns are selected from.
     """
     columns: List[str]
+    source: str
+
+
+@dataclass
+class Comparison(ASTNode):
+    """
+    Rule (25): Comparison -> ID RelOp Value
+
+    A single relational test, e.g. `Revenue > 1000`.
+
+    Attributes:
+        column_name: The column identifier being tested. (Named
+            `column_name` rather than `column` to avoid clashing with the
+            inherited `ASTNode.column` source-position field.)
+        operator: The relational operator name ("EQ", "NEQ", "LT", "GT",
+            "LE", "GE").
+        value: The literal being compared against.
+    """
+    column_name: str
+    operator: str
+    value: 'Value'
+
+
+@dataclass
+class UnaryCondition(ASTNode):
+    """
+    Rule (23): UnaryExpr -> NOT UnaryExpr
+
+    Attributes:
+        operator: Always "NOT".
+        operand: The condition being negated.
+    """
+    operator: str
+    operand: 'Condition'
+
+
+@dataclass
+class BinaryCondition(ASTNode):
+    """
+    Rules (19-22): OrExpr -> AndExpr OR OrExpr, AndExpr -> UnaryExpr AND AndExpr
+
+    Attributes:
+        operator: "AND" or "OR".
+        left: The left-hand condition.
+        right: The right-hand condition.
+    """
+    operator: str
+    left: 'Condition'
+    right: 'Condition'
+
+
+# Type alias for any node that can appear inside a WHERE clause
+Condition = Union[Comparison, UnaryCondition, BinaryCondition]
 
 
 @dataclass
 class FilterStmt(ASTNode):
     """
-    Represents Rule (10): FilterStmt → FILTER ID RELOP Value
-    
-    Filters data based on a relational expression.
-    
+    Rule (10): FilterStmt -> FILTER ID WHERE Condition SEMI
+
+    Example:
+        FILTER sales WHERE Region = "North" AND Revenue > 1000;
+
     Attributes:
-        column_name: The column identifier to filter on
-        operator: The relational operator (GT, LT, EQ, GE, LE, NEQ)
-        value: The Value node representing the comparison value
+        dataset: The identifier of the dataset being filtered.
+        condition: The (possibly compound) condition tree from the WHERE
+            clause.
     """
-    column_name: str
-    operator: str  # Operator name (e.g., "GT", "LT", "EQ")
-    value: 'Value'
+    dataset: str
+    condition: Condition
 
 
 @dataclass
 class PlotStmt(ASTNode):
     """
-    Represents Rule (11): PlotStmt → PLOT ChartType ColumnList
-    
-    Visualizes data using a specified chart type.
-    
+    Rule (11): VisualizeStmt -> VISUALIZE ChartType OF ID FROM ID SEMI
+
+    Example:
+        VISUALIZE BAR OF Revenue FROM sales;
+
     Attributes:
-        chart_type: The chart type (BAR, LINE, or SCATTER)
-        columns: List of column names to plot
+        chart_type: One of "BAR", "LINE", "SCATTER", "PIE".
+        column_name: The single column to visualize. (Named `column_name`
+            rather than `column` to avoid clashing with the inherited
+            `ASTNode.column` source-position field.)
+        source: The dataset identifier the column is drawn from.
     """
-    chart_type: str  # Chart type name (e.g., "BAR", "LINE", "SCATTER")
-    columns: List[str]
+    chart_type: str
+    column_name: str
+    source: str
 
 
 @dataclass
 class Value(ASTNode):
     """
-    Represents Rules (23-25): Value → INT_LIT | FLOAT_LIT | STRING_LIT
-    
-    A literal value (integer, float, or string).
-    
+    Rules (32-34): Value -> INT_LIT | FLOAT_LIT | STRING_LIT
+
     Attributes:
-        type: The value type ("INT", "FLOAT", or "STRING")
-        literal: The actual value (int, float, or str)
+        type: "INT", "FLOAT", or "STRING".
+        literal: The parsed literal value.
     """
-    type: str  # "INT", "FLOAT", or "STRING"
+    type: str
     literal: Union[int, float, str]
 
 
-# Type alias for Statement nodes
+# Type alias for top-level statements
 Statement = Union[LoadStmt, SelectStmt, FilterStmt, PlotStmt]
 
 
@@ -144,111 +217,88 @@ Statement = Union[LoadStmt, SelectStmt, FilterStmt, PlotStmt]
 
 class Parser:
     """
-    Recursive descent parser for DataLang.
-    
+    Recursive-descent parser for DataLang.
+
     Construction Strategy:
-    - Tokens are provided by the Lexer
-    - Parser maintains current position in token stream
-    - Each grammar rule has a corresponding parse method
-    - Terminals are matched via consume()
-    - Non-terminals recursively call their parse methods
-    - Errors halt parsing and report location info
-    
+    - Tokens are supplied by the Lexer.
+    - The parser keeps a single cursor (self.position) into the token stream.
+    - Each grammar rule has a corresponding _parse_* method.
+    - Terminals are matched via _consume(); non-terminals recurse.
+    - Left recursion in the grammar (StatementList, ColumnList, OrExpr,
+      AndExpr) is rewritten iteratively, folding repeated operators into a
+      left-associative chain of BinaryCondition nodes for OR/AND.
+
     Error Handling:
-    - ParseError exceptions are raised on syntax errors
-    - Error messages include line and column numbers
-    - Parser stops at first error (fail-fast approach)
+    - A ParseError is raised on the first syntax error (fail-fast).
+    - Every error message includes the offending token's line and column.
     """
-    
+
     def __init__(self, tokens: List[Token]):
         """
-        Initialize the parser with a token stream.
-        
         Args:
-            tokens: List of Token objects from the Lexer
+            tokens: The token list produced by Lexer.tokenize(), including
+                the trailing EOF token.
         """
         self.tokens = tokens
-        self.position = 0  # Current position in token stream
-    
+        self.position = 0
+
+    # ------------------------------------------------------------------ #
+    # Rule (1): Program -> StatementList
+    # ------------------------------------------------------------------ #
+
     def parse(self) -> Program:
         """
-        Parse the entire token stream and build an AST.
-        
-        Entry point that implements Rule (1): Program → StatementList
-        
+        Parse the full token stream into a Program node.
+
         Returns:
-            Program node (root of the AST)
-            
+            The root Program node of the AST.
+
         Raises:
-            ParseError: If the input is not a valid DataLang program
+            ParseError: If the input does not form a valid DataLang program.
         """
+        first = self._current_token()
         statements = self._parse_statement_list()
-        
-        # Ensure we've consumed all tokens (except EOF)
+
         if self._current_token().type != TokenType.EOF:
-            self._error(f"Unexpected token after program: {self._current_token().lexeme}")
-        
-        return Program(
-            statements=statements,
-            line=self.tokens[0].line,
-            column=self.tokens[0].column
-        )
-    
-    # ========================================================================
-    # Rule (2-3): StatementList → Statement StatementList | Statement
-    # ========================================================================
-    # This rule is left-recursive in the grammar, but we transform it to use
-    # iteration instead (which is more efficient and avoids infinite recursion).
-    # The loop continues parsing statements until we reach EOF or an unexpected token.
-    
+            self._error(
+                f"Unexpected token after program: '{self._current_token().lexeme}'"
+            )
+
+        return Program(statements=statements, line=first.line, column=first.column)
+
+    # ------------------------------------------------------------------ #
+    # Rules (2-3): StatementList -> Statement StatementList | Statement
+    # ------------------------------------------------------------------ #
+
     def _parse_statement_list(self) -> List[Statement]:
         """
-        Parse a sequence of statements (Rule 2-3).
-        
-        Transforms left-recursive rule:
-            StatementList → Statement StatementList | Statement
-        
-        Into iterative form:
-            StatementList → (Statement)*
-        
-        The loop accumulates statements until reaching EOF or an error.
-        
+        Iterative form: StatementList -> (Statement)*
+
         Returns:
-            List of Statement nodes (LoadStmt, SelectStmt, FilterStmt, PlotStmt)
+            The list of parsed statements, in source order.
         """
         statements = []
-        
-        # Keep parsing statements while we haven't reached EOF
         while self._current_token().type != TokenType.EOF:
-            stmt = self._parse_statement()
-            statements.append(stmt)
-        
+            statements.append(self._parse_statement())
         return statements
-    
-    # ========================================================================
-    # Rules (4-7): Statement → LoadStmt | SelectStmt | FilterStmt | PlotStmt
-    # ========================================================================
-    # This is a choice rule: we look at the first token (LOAD, SELECT, FILTER, or PLOT)
-    # to decide which statement type to parse.
-    
+
+    # ------------------------------------------------------------------ #
+    # Rules (4-7): Statement -> LoadStmt | SelectStmt | FilterStmt | VisualizeStmt
+    # ------------------------------------------------------------------ #
+
     def _parse_statement(self) -> Statement:
         """
-        Parse a single statement (Rules 4-7).
-        
-        Uses the first token as a lookahead to determine which statement type:
-        - LOAD → LoadStmt
-        - SELECT → SelectStmt
-        - FILTER → FilterStmt
-        - VISUALIZE → PlotStmt
-        
+        Dispatch on the leading keyword to pick a statement rule.
+
         Returns:
-            One of: LoadStmt, SelectStmt, FilterStmt, or PlotStmt
-            
+            One of LoadStmt, SelectStmt, FilterStmt, PlotStmt.
+
         Raises:
-            ParseError: If the first token doesn't match any statement keyword
+            ParseError: If the current token does not start a valid
+                statement.
         """
         token_type = self._current_token().type
-        
+
         if token_type == TokenType.LOAD:
             return self._parse_load_stmt()
         elif token_type == TokenType.SELECT:
@@ -256,406 +306,367 @@ class Parser:
         elif token_type == TokenType.FILTER:
             return self._parse_filter_stmt()
         elif token_type == TokenType.VISUALIZE:
-            return self._parse_plot_stmt()
+            return self._parse_visualize_stmt()
         else:
-            self._error(f"Expected statement (LOAD, SELECT, FILTER, or VISUALIZE), got {self._current_token().lexeme}")
-    
-    # ========================================================================
-    # Rule (8): LoadStmt → LOAD STRING_LIT
-    # ========================================================================
-    
+            self._error(
+                "Expected statement (LOAD, SELECT, FILTER, or VISUALIZE), "
+                f"got '{self._current_token().lexeme}'"
+            )
+
+    # ------------------------------------------------------------------ #
+    # Rule (8): LoadStmt -> LOAD STRING_LIT AS ID SEMI
+    # ------------------------------------------------------------------ #
+
     def _parse_load_stmt(self) -> LoadStmt:
         """
-        Parse a LOAD statement (Rule 8).
-        
-        Syntax: LOAD <file_path_string>
-        
-        Example:
-            LOAD "data.csv"
-        
-        Returns:
-            LoadStmt node with the file path extracted from the string literal
-            
-        Raises:
-            ParseError: If LOAD keyword or STRING_LIT is missing
+        Example: LOAD "sales.csv" AS sales;
         """
-        line = self._current_token().line
-        column = self._current_token().column
-        
-        # Consume LOAD keyword
-        self._consume(TokenType.LOAD, "Expected LOAD keyword")
-        
-        # Consume string literal and extract its value
-        file_path_token = self._consume(TokenType.STRING_LIT, "Expected file path string after LOAD")
-        file_path = file_path_token.literal  # The parsed string value (escape sequences already resolved)
-        
-        return LoadStmt(
-            file_path=file_path,
-            line=line,
-            column=column
+        start = self._current_token()
+
+        self._consume(TokenType.LOAD, "Expected 'LOAD'")
+        path_token = self._consume(
+            TokenType.STRING_LIT, "Expected a quoted file path after LOAD"
         )
-    
-    # ========================================================================
-    # Rule (9): SelectStmt → SELECT ColumnList
-    # ========================================================================
-    
+        self._consume(TokenType.AS, "Expected 'AS' after the file path")
+        var_token = self._consume(
+            TokenType.ID, "Expected a dataset identifier after 'AS'"
+        )
+        self._consume(TokenType.SEMI, "Expected ';' to terminate LOAD statement")
+
+        return LoadStmt(
+            file_path=path_token.literal,
+            variable=var_token.lexeme,
+            line=start.line,
+            column=start.column,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Rule (9): SelectStmt -> SELECT ColumnList FROM ID SEMI
+    # ------------------------------------------------------------------ #
+
     def _parse_select_stmt(self) -> SelectStmt:
         """
-        Parse a SELECT statement (Rule 9).
-        
-        Syntax: SELECT <column_1>, <column_2>, ...
-        
-        Example:
-            SELECT revenue, expenses, profit
-        
-        Returns:
-            SelectStmt node with list of column names
-            
-        Raises:
-            ParseError: If SELECT keyword or ColumnList is missing
+        Example: SELECT Region, Revenue FROM sales;
         """
-        line = self._current_token().line
-        column = self._current_token().column
-        
-        # Consume SELECT keyword
-        self._consume(TokenType.SELECT, "Expected SELECT keyword")
-        
-        # Parse comma-separated column list
+        start = self._current_token()
+
+        self._consume(TokenType.SELECT, "Expected 'SELECT'")
         columns = self._parse_column_list()
-        
+        self._consume(TokenType.FROM, "Expected 'FROM' after column list")
+        source_token = self._consume(
+            TokenType.ID, "Expected a dataset identifier after 'FROM'"
+        )
+        self._consume(TokenType.SEMI, "Expected ';' to terminate SELECT statement")
+
         return SelectStmt(
             columns=columns,
-            line=line,
-            column=column
+            source=source_token.lexeme,
+            line=start.line,
+            column=start.column,
         )
-    
-    # ========================================================================
-    # Rule (10): FilterStmt → FILTER ID RELOP Value
-    # ========================================================================
-    
+
+    # ------------------------------------------------------------------ #
+    # Rule (10): FilterStmt -> FILTER ID WHERE Condition SEMI
+    # ------------------------------------------------------------------ #
+
     def _parse_filter_stmt(self) -> FilterStmt:
         """
-        Parse a FILTER statement (Rule 10).
-        
-        Syntax: FILTER <column> <relop> <value>
-        
-        Example:
-            FILTER amount > 100
-            FILTER region != "US"
-        
-        Returns:
-            FilterStmt node with column, operator, and value
-            
-        Raises:
-            ParseError: If required components are missing
+        Example: FILTER sales WHERE Region = "North" AND Revenue > 1000;
         """
-        line = self._current_token().line
-        column_col = self._current_token().column
-        
-        # Consume FILTER keyword
-        self._consume(TokenType.FILTER, "Expected FILTER keyword")
-        
-        # Consume column identifier
-        column_token = self._consume(TokenType.ID, "Expected column identifier after FILTER")
-        column_name = column_token.lexeme
-        
-        # Parse relational operator
-        operator = self._parse_relop()
-        
-        # Parse comparison value
-        value = self._parse_value()
-        
-        return FilterStmt(
-            column_name=column_name,
-            operator=operator,
-            value=value,
-            line=line,
-            column=column_col
+        start = self._current_token()
+
+        self._consume(TokenType.FILTER, "Expected 'FILTER'")
+        dataset_token = self._consume(
+            TokenType.ID, "Expected a dataset identifier after 'FILTER'"
         )
-    
-    # ========================================================================
-    # Rule (11): PlotStmt → PLOT ChartType ColumnList
-    # ========================================================================
-    
-    def _parse_plot_stmt(self) -> PlotStmt:
+        self._consume(TokenType.WHERE, "Expected 'WHERE' after dataset identifier")
+        condition = self._parse_condition()
+        self._consume(TokenType.SEMI, "Expected ';' to terminate FILTER statement")
+
+        return FilterStmt(
+            dataset=dataset_token.lexeme,
+            condition=condition,
+            line=start.line,
+            column=start.column,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Rule (11): VisualizeStmt -> VISUALIZE ChartType OF ID FROM ID SEMI
+    # ------------------------------------------------------------------ #
+
+    def _parse_visualize_stmt(self) -> PlotStmt:
         """
-        Parse a PLOT statement (Rule 11).
-        
-        Syntax: VISUALIZE <chart_type> <column_1>, <column_2>, ...
-        
-        Example:
-            VISUALIZE BAR revenue, expenses
-            VISUALIZE LINE month, sales
-        
-        Returns:
-            PlotStmt node with chart type and column list
-            
-        Raises:
-            ParseError: If required components are missing
+        Example: VISUALIZE BAR OF Revenue FROM sales;
         """
-        line = self._current_token().line
-        column = self._current_token().column
-        
-        # Consume VISUALIZE keyword
-        self._consume(TokenType.VISUALIZE, "Expected VISUALIZE keyword")
-        
-        # Parse chart type
+        start = self._current_token()
+
+        self._consume(TokenType.VISUALIZE, "Expected 'VISUALIZE'")
         chart_type = self._parse_chart_type()
-        
-        # Parse column list
-        columns = self._parse_column_list()
-        
+        self._consume(TokenType.OF, "Expected 'OF' after chart type")
+        column_token = self._consume(
+            TokenType.ID, "Expected a column identifier after 'OF'"
+        )
+        self._consume(TokenType.FROM, "Expected 'FROM' after column identifier")
+        source_token = self._consume(
+            TokenType.ID, "Expected a dataset identifier after 'FROM'"
+        )
+        self._consume(
+            TokenType.SEMI, "Expected ';' to terminate VISUALIZE statement"
+        )
+
         return PlotStmt(
             chart_type=chart_type,
-            columns=columns,
-            line=line,
-            column=column
+            column_name=column_token.lexeme,
+            source=source_token.lexeme,
+            line=start.line,
+            column=start.column,
         )
-    
-    # ========================================================================
-    # Rules (12-14): ChartType → BAR | LINE | SCATTER
-    # ========================================================================
-    
+
+    # ------------------------------------------------------------------ #
+    # Rules (12-15): ChartType -> BAR | LINE | SCATTER | PIE
+    # ------------------------------------------------------------------ #
+
     def _parse_chart_type(self) -> str:
         """
-        Parse a chart type keyword (Rules 12-14).
-        
-        Valid chart types:
-        - BAR: Bar chart
-        - LINE: Line chart
-        - SCATTER: Scatter plot
-        
         Returns:
-            String name of the chart type (e.g., "BAR", "LINE", "SCATTER")
-            
+            "BAR", "LINE", "SCATTER", or "PIE".
+
         Raises:
-            ParseError: If current token is not a valid chart type
+            ParseError: If the current token is not a recognized chart type.
         """
         token_type = self._current_token().type
-        
-        if token_type == TokenType.BAR:
+        mapping = {
+            TokenType.BAR: "BAR",
+            TokenType.LINE: "LINE",
+            TokenType.SCATTER: "SCATTER",
+            TokenType.PIE: "PIE",
+        }
+        if token_type in mapping:
             self._advance()
-            return "BAR"
-        elif token_type == TokenType.LINE:
-            self._advance()
-            return "LINE"
-        elif token_type == TokenType.SCATTER:
-            self._advance()
-            return "SCATTER"
-        else:
-            self._error(f"Expected chart type (BAR, LINE, or SCATTER), got {self._current_token().lexeme}")
-    
-    # ========================================================================
-    # Rules (15-16): ColumnList → ID COMMA ColumnList | ID
-    # ========================================================================
-    # This rule is left-recursive. We transform it to use iteration:
-    #   ColumnList → ID (COMMA ID)*
-    
+            return mapping[token_type]
+        self._error(
+            "Expected chart type (BAR, LINE, SCATTER, or PIE), got "
+            f"'{self._current_token().lexeme}'"
+        )
+
+    # ------------------------------------------------------------------ #
+    # Rules (16-17): ColumnList -> ID COMMA ColumnList | ID
+    # ------------------------------------------------------------------ #
+
     def _parse_column_list(self) -> List[str]:
         """
-        Parse a comma-separated list of column names (Rules 15-16).
-        
-        Transforms left-recursive rule:
-            ColumnList → ID COMMA ColumnList | ID
-        
-        Into iterative form:
-            ColumnList → ID (COMMA ID)*
-        
-        Examples:
-            revenue
-            revenue, expenses, profit
-            month, sales, target
-        
-        Returns:
-            List of column name strings (identifiers)
-            
-        Raises:
-            ParseError: If first ID is missing
+        Iterative form: ColumnList -> ID (COMMA ID)*
         """
-        columns = []
-        
-        # Parse first column (required)
-        first_column_token = self._consume(TokenType.ID, "Expected column name")
-        columns.append(first_column_token.lexeme)
-        
-        # Parse additional columns (zero or more)
-        # Keep consuming COMMA ID pairs as long as we see a comma
+        columns = [self._consume(TokenType.ID, "Expected a column name").lexeme]
+
         while self._current_token().type == TokenType.COMMA:
-            self._advance()  # Consume COMMA
-            column_token = self._consume(TokenType.ID, "Expected column name after comma")
-            columns.append(column_token.lexeme)
-        
+            self._advance()
+            columns.append(
+                self._consume(
+                    TokenType.ID, "Expected a column name after ','"
+                ).lexeme
+            )
+
         return columns
-    
-    # ========================================================================
-    # Rules (17-22): RELOP → GT | LT | EQ | GE | LE | NEQ
-    # ========================================================================
-    
+
+    # ------------------------------------------------------------------ #
+    # Rule (18): Condition -> OrExpr
+    # ------------------------------------------------------------------ #
+
+    def _parse_condition(self) -> Condition:
+        """Entry point into the condition grammar (WHERE clauses)."""
+        return self._parse_or_expr()
+
+    # ------------------------------------------------------------------ #
+    # Rules (19-20): OrExpr -> AndExpr OR OrExpr | AndExpr
+    # ------------------------------------------------------------------ #
+
+    def _parse_or_expr(self) -> Condition:
+        """
+        Iterative, left-associative form: OrExpr -> AndExpr (OR AndExpr)*
+        """
+        start = self._current_token()
+        left = self._parse_and_expr()
+
+        while self._current_token().type == TokenType.OR:
+            self._advance()
+            right = self._parse_and_expr()
+            left = BinaryCondition(
+                operator="OR", left=left, right=right,
+                line=start.line, column=start.column,
+            )
+
+        return left
+
+    # ------------------------------------------------------------------ #
+    # Rules (21-22): AndExpr -> UnaryExpr AND AndExpr | UnaryExpr
+    # ------------------------------------------------------------------ #
+
+    def _parse_and_expr(self) -> Condition:
+        """
+        Iterative, left-associative form: AndExpr -> UnaryExpr (AND UnaryExpr)*
+        """
+        start = self._current_token()
+        left = self._parse_unary_expr()
+
+        while self._current_token().type == TokenType.AND:
+            self._advance()
+            right = self._parse_unary_expr()
+            left = BinaryCondition(
+                operator="AND", left=left, right=right,
+                line=start.line, column=start.column,
+            )
+
+        return left
+
+    # ------------------------------------------------------------------ #
+    # Rules (23-24): UnaryExpr -> NOT UnaryExpr | Comparison
+    # ------------------------------------------------------------------ #
+
+    def _parse_unary_expr(self) -> Condition:
+        """NOT binds tighter than AND/OR and may nest (e.g. NOT NOT x)."""
+        if self._current_token().type == TokenType.NOT:
+            start = self._current_token()
+            self._advance()
+            operand = self._parse_unary_expr()
+            return UnaryCondition(
+                operator="NOT", operand=operand,
+                line=start.line, column=start.column,
+            )
+        return self._parse_comparison()
+
+    # ------------------------------------------------------------------ #
+    # Rule (25): Comparison -> ID RelOp Value
+    # ------------------------------------------------------------------ #
+
+    def _parse_comparison(self) -> Comparison:
+        """
+        Example: Revenue > 1000
+        """
+        column_token = self._consume(
+            TokenType.ID, "Expected a column identifier in condition"
+        )
+        operator = self._parse_relop()
+        value = self._parse_value()
+
+        return Comparison(
+            column_name=column_token.lexeme,
+            operator=operator,
+            value=value,
+            line=column_token.line,
+            column=column_token.column,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Rules (26-31): RelOp -> EQ | NEQ | LT | GT | LE | GE
+    # ------------------------------------------------------------------ #
+
     def _parse_relop(self) -> str:
         """
-        Parse a relational operator (Rules 17-22).
-        
-        Valid operators:
-        - GT (>): Greater than
-        - LT (<): Less than
-        - EQ (==): Equal to
-        - GE (>=): Greater than or equal
-        - LE (<=): Less than or equal
-        - NEQ (!=): Not equal
-        
         Returns:
-            String name of the operator (e.g., "GT", "LT", "EQ")
-            
-        Raises:
-            ParseError: If current token is not a valid operator
+            "EQ", "NEQ", "LT", "GT", "LE", or "GE".
+
+        Note: the language specification lists '=' as the equality operator,
+        but the current Lexer only emits TokenType.EQ for '==' (a bare '='
+        is reported as a lexical ERROR token). This parser matches whatever
+        lexeme the Lexer actually classifies as TokenType.EQ, so it will
+        start accepting '=' automatically if the Lexer is ever updated to
+        match the specification — no parser change needed.
         """
         token_type = self._current_token().type
-        
-        if token_type == TokenType.GT:
+        mapping = {
+            TokenType.EQ: "EQ",
+            TokenType.NEQ: "NEQ",
+            TokenType.LT: "LT",
+            TokenType.GT: "GT",
+            TokenType.LE: "LE",
+            TokenType.GE: "GE",
+        }
+        if token_type in mapping:
             self._advance()
-            return "GT"
-        elif token_type == TokenType.LT:
-            self._advance()
-            return "LT"
-        elif token_type == TokenType.EQ:
-            self._advance()
-            return "EQ"
-        elif token_type == TokenType.GE:
-            self._advance()
-            return "GE"
-        elif token_type == TokenType.LE:
-            self._advance()
-            return "LE"
-        elif token_type == TokenType.NEQ:
-            self._advance()
-            return "NEQ"
-        else:
-            self._error(f"Expected relational operator (>, <, ==, >=, <=, !=), got {self._current_token().lexeme}")
-    
-    # ========================================================================
-    # Rules (23-25): Value → INT_LIT | FLOAT_LIT | STRING_LIT
-    # ========================================================================
-    
+            return mapping[token_type]
+        self._error(
+            "Expected a relational operator (=, !=, <, >, <=, >=), got "
+            f"'{self._current_token().lexeme}'"
+        )
+
+    # ------------------------------------------------------------------ #
+    # Rules (32-34): Value -> INT_LIT | FLOAT_LIT | STRING_LIT
+    # ------------------------------------------------------------------ #
+
     def _parse_value(self) -> Value:
         """
-        Parse a literal value (Rules 23-25).
-        
-        Valid value types:
-        - INT_LIT: Integer literal (e.g., 42, 100, -5)
-        - FLOAT_LIT: Floating point literal (e.g., 3.14, 99.99)
-        - STRING_LIT: String literal (e.g., "US", "data.csv")
-        
         Returns:
-            Value node with type and parsed literal
-            
-        Raises:
-            ParseError: If current token is not a valid value
+            A Value node wrapping the literal's type and parsed contents.
         """
         token = self._current_token()
-        line = token.line
-        column = token.column
-        
-        if token.type == TokenType.INT_LIT:
+
+        type_mapping = {
+            TokenType.INT_LIT: "INT",
+            TokenType.FLOAT_LIT: "FLOAT",
+            TokenType.STRING_LIT: "STRING",
+        }
+
+        if token.type in type_mapping:
             self._advance()
             return Value(
-                type="INT",
-                literal=token.literal,  # Already parsed as int by Lexer
-                line=line,
-                column=column
+                type=type_mapping[token.type],
+                literal=token.literal,
+                line=token.line,
+                column=token.column,
             )
-        elif token.type == TokenType.FLOAT_LIT:
-            self._advance()
-            return Value(
-                type="FLOAT",
-                literal=token.literal,  # Already parsed as float by Lexer
-                line=line,
-                column=column
-            )
-        elif token.type == TokenType.STRING_LIT:
-            self._advance()
-            return Value(
-                type="STRING",
-                literal=token.literal,  # Already parsed and escape sequences resolved
-                line=line,
-                column=column
-            )
-        else:
-            self._error(f"Expected value (integer, float, or string), got {token.lexeme}")
-    
-    # ========================================================================
+
+        self._error(
+            "Expected a value (integer, float, or string literal), got "
+            f"'{token.lexeme}'"
+        )
+
+    # ------------------------------------------------------------------ #
     # UTILITY METHODS
-    # ========================================================================
-    
+    # ------------------------------------------------------------------ #
+
     def _current_token(self) -> Token:
-        """
-        Get the token at the current position in the stream.
-        
-        Returns:
-            The current Token, or EOF token if at end of stream
-        """
+        """Return the token at the cursor, or the trailing EOF token."""
         if self.position >= len(self.tokens):
-            return self.tokens[-1]  # Return EOF token
+            return self.tokens[-1]
         return self.tokens[self.position]
-    
+
     def _advance(self) -> Token:
-        """
-        Move to the next token in the stream.
-        
-        Returns:
-            The token we just moved past
-        """
+        """Move the cursor forward one token and return the token passed."""
         token = self._current_token()
         if self.position < len(self.tokens) - 1:
             self.position += 1
         return token
-    
+
     def _consume(self, expected_type: TokenType, error_message: str) -> Token:
         """
-        Consume (match and advance past) a token of the expected type.
-        
-        This is the core operation for matching terminal symbols in the grammar.
-        If the current token matches, we advance and return it.
-        If not, we raise an error with location information.
-        
-        Args:
-            expected_type: The TokenType we expect to see
-            error_message: The error message if the token doesn't match
-            
-        Returns:
-            The matched token (now at the previous position)
-            
+        Match the current token against expected_type and advance past it.
+
         Raises:
-            ParseError: If current token doesn't match expected_type
+            ParseError: If the current token's type does not match.
         """
         current = self._current_token()
-        
+        if current.type == TokenType.ERROR:
+            self._error(f"Lexical error: {current.lexeme}")
         if current.type != expected_type:
             self._error(error_message)
-        
-        self._advance()
-        return current
-    
+        return self._advance()
+
     def _error(self, message: str) -> None:
         """
-        Report a parsing error and halt.
-        
-        Includes location information (line and column) from the current token.
-        This implements fail-fast error handling: we stop at the first error
-        rather than trying to recover.
-        
-        Args:
-            message: Description of the error
-            
+        Raise a ParseError annotated with the current token's line/column.
+
         Raises:
-            ParseError: Always (terminates parsing)
+            ParseError: Always.
         """
         token = self._current_token()
-        error_msg = f"Parse error at line {token.line}, column {token.column}: {message}"
-        raise ParseError(error_msg)
+        raise ParseError(
+            f"Syntax error at line {token.line}, column {token.column}: {message}"
+        )
 
 
 class ParseError(Exception):
-    """Exception raised when the parser encounters a syntax error."""
+    """Raised when the parser encounters a syntax (or embedded lexical) error."""
     pass
 
 
@@ -665,84 +676,95 @@ class ParseError(Exception):
 
 def print_ast(node: ASTNode, indent: int = 0) -> None:
     """
-    Pretty-print an AST node and its children.
-    
-    Used for debugging and visualization of the parse tree.
-    
+    Recursively print an AST node and its children for debugging.
+
     Args:
-        node: The AST node to print
-        indent: Current indentation level (for nested nodes)
+        node: The AST node to print.
+        indent: Current indentation depth.
     """
     prefix = "  " * indent
-    
+
     if isinstance(node, Program):
         print(f"{prefix}Program")
         for stmt in node.statements:
             print_ast(stmt, indent + 1)
-    
-    elif isinstance(node, LoadStmt):
-        print(f"{prefix}LoadStmt (file: {node.file_path})")
-    
-    elif isinstance(node, SelectStmt):
-        print(f"{prefix}SelectStmt (columns: {', '.join(node.columns)})")
-    
-    elif isinstance(node, FilterStmt):
-        print(f"{prefix}FilterStmt")
-        print(f"{prefix}  column: {node.column_name}")
-        print(f"{prefix}  operator: {node.operator}")
-        print(f"{prefix}  value:")
-        print_ast(node.value, indent + 2)
-    
-    elif isinstance(node, PlotStmt):
-        print(f"{prefix}PlotStmt (chart: {node.chart_type})")
-        print(f"{prefix}  columns: {', '.join(node.columns)}")
-    
-    elif isinstance(node, Value):
-        print(f"{prefix}Value ({node.type}: {node.literal})")
 
+    elif isinstance(node, LoadStmt):
+        print(f"{prefix}LoadStmt (file: {node.file_path!r}, as: {node.variable})")
+
+    elif isinstance(node, SelectStmt):
+        print(f"{prefix}SelectStmt (columns: {', '.join(node.columns)}, from: {node.source})")
+
+    elif isinstance(node, FilterStmt):
+        print(f"{prefix}FilterStmt (dataset: {node.dataset})")
+        print_ast(node.condition, indent + 1)
+
+    elif isinstance(node, PlotStmt):
+        print(f"{prefix}PlotStmt (chart: {node.chart_type}, column: {node.column_name}, from: {node.source})")
+
+    elif isinstance(node, Comparison):
+        print(f"{prefix}Comparison ({node.column_name} {node.operator} {node.value.literal!r})")
+
+    elif isinstance(node, UnaryCondition):
+        print(f"{prefix}UnaryCondition ({node.operator})")
+        print_ast(node.operand, indent + 1)
+
+    elif isinstance(node, BinaryCondition):
+        print(f"{prefix}BinaryCondition ({node.operator})")
+        print_ast(node.left, indent + 1)
+        print_ast(node.right, indent + 1)
+
+
+# ============================================================================
+# DEMO
+# ============================================================================
 
 def main():
-    """
-    Example usage: tokenize sample code and parse it.
-    """
-    # Sample DataLang program
-    source = '''LOAD "sales_data.csv"
-SELECT revenue, expenses, profit
-FILTER revenue > 1000
-VISUALIZE BAR revenue, expenses'''
-    
+    """Tokenize and parse the two valid example programs from the language
+    specification, then attempt an invalid program to show error reporting."""
+
+    # NOTE: the spec's examples use '=' for equality, but the current Lexer
+    # only recognizes '==' as TokenType.EQ (a bare '=' is a lexical error).
+    # '==' is used below so this demo runs against the Lexer as given.
+    valid_programs = [
+        '''LOAD "sales.csv" AS sales;
+FILTER sales WHERE Region == "North" AND Revenue > 1000;
+SELECT Region, Revenue FROM sales;
+VISUALIZE BAR OF Revenue FROM sales;''',
+        '''LOAD "students.csv" AS students;
+FILTER students WHERE Grade >= 60 AND NOT Grade > 100;
+VISUALIZE LINE OF Grade FROM students;''',
+    ]
+
+    for i, source in enumerate(valid_programs, start=1):
+        print("=" * 70)
+        print(f"VALID PROGRAM {i}")
+        print("=" * 70)
+        print(source)
+        print()
+
+        tokens = Lexer(source).tokenize()
+        try:
+            ast = Parser(tokens).parse()
+            print_ast(ast)
+            print("\n✓ Parsed successfully\n")
+        except ParseError as e:
+            print(f"\n✗ Unexpected parse failure: {e}\n")
+
+    # Invalid: identifier missing before WHERE's comparison column
+    invalid_source = 'FILTER sales WHERE > 1000;'
     print("=" * 70)
-    print("DATALANG PARSER EXAMPLE")
+    print("INVALID PROGRAM")
     print("=" * 70)
-    print("\nSource Code:")
-    print(source)
-    print("\n" + "=" * 70)
-    
-    # Tokenize
-    print("\nTokenization:")
-    lexer = Lexer(source)
-    tokens = lexer.tokenize()
-    
-    non_eof_tokens = [t for t in tokens if t.type != TokenType.EOF]
-    print(f"Generated {len(non_eof_tokens)} tokens:")
-    for i, token in enumerate(non_eof_tokens[:15]):  # Show first 15
-        print(f"  {i:2d}: {token.type.name:12} = {token.lexeme:20}")
-    if len(non_eof_tokens) > 15:
-        print(f"  ... and {len(non_eof_tokens) - 15} more tokens")
-    
-    # Parse
-    print("\n" + "=" * 70)
-    print("Parsing:")
+    print(invalid_source)
+    print()
+
+    tokens = Lexer(invalid_source).tokenize()
     try:
-        parser = Parser(tokens)
-        ast = parser.parse()
-        
-        print("\nAST (Abstract Syntax Tree):")
-        print_ast(ast)
-        print("\n✓ Parsing successful!")
-    
+        Parser(tokens).parse()
+        print("Unexpectedly parsed without error!")
     except ParseError as e:
-        print(f"\n✗ Parsing failed: {e}")
+        print(f"✗ {e}")
 
 
 if __name__ == "__main__":
