@@ -2,25 +2,24 @@
 DataLang Parser Implementation
 
 A recursive-descent parser for the DataLang DSL that builds an Abstract Syntax
-Tree (AST) from the token stream produced by the Lexer. This implementation
-follows the Phase 1 language specification exactly:
+Tree (AST) from the token stream produced by the Lexer. The existing statement
+forms are preserved:
 
     LOAD "<file>" AS <identifier> ;
     FILTER <identifier> WHERE <condition> ;
     SELECT <col_list> FROM <identifier> ;
     VISUALIZE <chart_type> OF <column> FROM <identifier> ;
 
-AGGREGATE is part of the language proposal but is intentionally left
-unimplemented here, since it is out of scope for this AST
-(Program / LoadStmt / SelectStmt / FilterStmt / PlotStmt only). No language
-features beyond the specification (e.g. arithmetic operators, extra
-statement forms) have been added.
+Aggregation extends the statement grammar with:
+    AGGREGATE <function>(<column>) FROM <identifier> [GROUP BY <column>] ;
+Each statement contains one function and at most one grouping column.
+Sorting adds SORT <column> [ASC|DESC] FROM <identifier> ; with contextual words.
 
 Grammar Implemented
 --------------------
 (1)   Program        -> StatementList
 (2-3) StatementList  -> Statement StatementList | Statement          (iterative)
-(4-7) Statement      -> LoadStmt | SelectStmt | FilterStmt | VisualizeStmt
+(4-7) Statement      -> LoadStmt | SelectStmt | FilterStmt | VisualizeStmt | AggregateStmt | SortStmt
 (8)   LoadStmt       -> LOAD STRING_LIT AS ID SEMI
 (9)   SelectStmt     -> SELECT ColumnList FROM ID SEMI
 (10)  FilterStmt     -> FILTER ID WHERE Condition SEMI
@@ -34,6 +33,11 @@ Grammar Implemented
 (25)  Comparison     -> ID RelOp Value
 (26-31) RelOp        -> EQ | NEQ | LT | GT | LE | GE
 (32-34) Value        -> INT_LIT | FLOAT_LIT | STRING_LIT
+       AggregateStmt -> AGGREGATE AggregateFunc LPAREN ID RPAREN FROM ID
+                        (GROUP BY ID)? SEMI
+       AggregateFunc -> SUM | AVG | COUNT | MIN | MAX
+       SortStmt      -> SORT-word ID (ASC-word | DESC-word)? FROM ID SEMI
+                       (SORT/ASC/DESC remain ID tokens outside their context)
 
 Note on rule (11): the language specification's general form for VISUALIZE is
 `VISUALIZE <chart_type> OF <column> FROM <identifier>` — a single column, not
@@ -195,6 +199,25 @@ class PlotStmt(ASTNode):
 
 
 @dataclass
+class AggregateStmt(ASTNode):
+    """One column reduction, optionally partitioned by a grouping column."""
+
+    function: str
+    column_name: str
+    source: str
+    group_by: Optional[str] = None
+
+
+@dataclass
+class SortStmt(ASTNode):
+    """Stable single-column sorting, ascending unless DESC is specified."""
+
+    column_name: str
+    source: str
+    ascending: bool = True
+
+
+@dataclass
 class Value(ASTNode):
     """
     Rules (32-34): Value -> INT_LIT | FLOAT_LIT | STRING_LIT
@@ -208,7 +231,7 @@ class Value(ASTNode):
 
 
 # Type alias for top-level statements
-Statement = Union[LoadStmt, SelectStmt, FilterStmt, PlotStmt]
+Statement = Union[LoadStmt, SelectStmt, FilterStmt, PlotStmt, AggregateStmt, SortStmt]
 
 
 # ============================================================================
@@ -257,7 +280,10 @@ class Parser:
             ParseError: If the input does not form a valid DataLang program.
         """
         first = self._current_token()
-        statements = self._parse_statement_list()
+        try:
+            statements = self._parse_statement_list()
+        except RecursionError:
+            self._error("Condition nesting is too deep; simplify nested expressions")
 
         if self._current_token().type != TokenType.EOF:
             self._error(
@@ -291,7 +317,7 @@ class Parser:
         Dispatch on the leading keyword to pick a statement rule.
 
         Returns:
-            One of LoadStmt, SelectStmt, FilterStmt, PlotStmt.
+            One of LoadStmt, SelectStmt, FilterStmt, PlotStmt, AggregateStmt, SortStmt.
 
         Raises:
             ParseError: If the current token does not start a valid
@@ -307,11 +333,53 @@ class Parser:
             return self._parse_filter_stmt()
         elif token_type == TokenType.VISUALIZE:
             return self._parse_visualize_stmt()
+        elif token_type == TokenType.AGGREGATE:
+            return self._parse_aggregate_stmt()
+        elif token_type == TokenType.ID and self._current_token().lexeme.lower() == "sort":
+            return self._parse_sort_stmt()
         else:
             self._error(
-                "Expected statement (LOAD, SELECT, FILTER, or VISUALIZE), "
+                "Expected statement (LOAD, SELECT, FILTER, VISUALIZE, AGGREGATE, or SORT), "
                 f"got '{self._current_token().lexeme}'"
             )
+
+    def _parse_sort_stmt(self) -> SortStmt:
+        start = self._consume(TokenType.ID, "Expected 'SORT'")
+        column = self._consume(TokenType.ID, "Expected a sorting column after 'SORT'")
+        ascending = True
+        direction = self._current_token()
+        if direction.type == TokenType.ID and direction.lexeme.lower() in {"asc", "desc"}:
+            ascending = self._advance().lexeme.lower() == "asc"
+        self._consume(TokenType.FROM, "Expected 'FROM' after sorting column and optional ASC/DESC")
+        source = self._consume(TokenType.ID, "Expected a dataset identifier after 'FROM'")
+        self._consume(TokenType.SEMI, "Expected ';' to terminate SORT statement")
+        return SortStmt(
+            line=start.line, column=start.column, column_name=column.lexeme,
+            source=source.lexeme, ascending=ascending,
+        )
+
+    def _parse_aggregate_stmt(self) -> AggregateStmt:
+        start = self._consume(TokenType.AGGREGATE, "Expected 'AGGREGATE'")
+        function = self._current_token()
+        functions = {TokenType.SUM, TokenType.AVG, TokenType.COUNT, TokenType.MIN, TokenType.MAX}
+        if function.type not in functions:
+            self._error("Expected aggregate function (SUM, AVG, COUNT, MIN, or MAX)")
+        self._advance()
+        self._consume(TokenType.LPAREN, "Expected '(' after aggregate function")
+        column = self._consume(TokenType.ID, "Expected an aggregate column")
+        self._consume(TokenType.RPAREN, "Expected ')' after aggregate column")
+        self._consume(TokenType.FROM, "Expected 'FROM' after aggregate expression")
+        source = self._consume(TokenType.ID, "Expected a dataset identifier after 'FROM'")
+        group_by = None
+        if self._current_token().type == TokenType.GROUP:
+            self._advance()
+            self._consume(TokenType.BY, "Expected 'BY' after 'GROUP'")
+            group_by = self._consume(TokenType.ID, "Expected a grouping column after 'BY'").lexeme
+        self._consume(TokenType.SEMI, "Expected ';' to terminate AGGREGATE statement")
+        return AggregateStmt(
+            line=start.line, column=start.column, function=function.type.name,
+            column_name=column.lexeme, source=source.lexeme, group_by=group_by,
+        )
 
     # ------------------------------------------------------------------ #
     # Rule (8): LoadStmt -> LOAD STRING_LIT AS ID SEMI
@@ -586,7 +654,7 @@ class Parser:
             self._advance()
             return mapping[token_type]
         self._error(
-            "Expected a relational operator (=, !=, <, >, <=, >=), got "
+            "Expected a relational operator (==, !=, <, >, <=, >=), got "
             f"'{self._current_token().lexeme}'"
         )
 
@@ -627,9 +695,10 @@ class Parser:
 
     def _current_token(self) -> Token:
         """Return the token at the cursor, or the trailing EOF token."""
-        if self.position >= len(self.tokens):
-            return self.tokens[-1]
-        return self.tokens[self.position]
+        token = self.tokens[min(self.position, len(self.tokens) - 1)]
+        if token.type == TokenType.ERROR:
+            raise ParseError(token.lexeme, token.line, token.column, stage="Lexical")
+        return token
 
     def _advance(self) -> Token:
         """Move the cursor forward one token and return the token passed."""
@@ -646,10 +715,9 @@ class Parser:
             ParseError: If the current token's type does not match.
         """
         current = self._current_token()
-        if current.type == TokenType.ERROR:
-            self._error(f"Lexical error: {current.lexeme}")
         if current.type != expected_type:
-            self._error(error_message)
+            actual = "end of input" if current.type == TokenType.EOF else repr(current.lexeme)
+            self._error(f"{error_message}; got {actual}")
         return self._advance()
 
     def _error(self, message: str) -> None:
@@ -660,14 +728,16 @@ class Parser:
             ParseError: Always.
         """
         token = self._current_token()
-        raise ParseError(
-            f"Syntax error at line {token.line}, column {token.column}: {message}"
-        )
+        raise ParseError(message, token.line, token.column)
 
 
 class ParseError(Exception):
     """Raised when the parser encounters a syntax (or embedded lexical) error."""
-    pass
+
+    def __init__(self, message: str, line=None, column=None, stage="Syntax"):
+        self.message, self.line, self.column, self.stage = message, line, column, stage
+        location = f" at line {line}, column {column}" if line is not None else ""
+        super().__init__(f"{stage} error{location}: {message}")
 
 
 # ============================================================================
@@ -701,6 +771,14 @@ def print_ast(node: ASTNode, indent: int = 0) -> None:
 
     elif isinstance(node, PlotStmt):
         print(f"{prefix}PlotStmt (chart: {node.chart_type}, column: {node.column_name}, from: {node.source})")
+
+    elif isinstance(node, AggregateStmt):
+        grouping = f", group by: {node.group_by}" if node.group_by is not None else ""
+        print(f"{prefix}AggregateStmt ({node.function}({node.column_name}), from: {node.source}{grouping})")
+
+    elif isinstance(node, SortStmt):
+        direction = "ASC" if node.ascending else "DESC"
+        print(f"{prefix}SortStmt (column: {node.column_name}, order: {direction}, from: {node.source})")
 
     elif isinstance(node, Comparison):
         print(f"{prefix}Comparison ({node.column_name} {node.operator} {node.value.literal!r})")

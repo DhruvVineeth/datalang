@@ -8,6 +8,7 @@ such as semantic analysis and IR generation.
 
 from src.parser.parser import (
     ASTNode,
+    AggregateStmt,
     BinaryCondition,
     Comparison,
     Condition,
@@ -16,6 +17,7 @@ from src.parser.parser import (
     PlotStmt,
     Program,
     SelectStmt,
+    SortStmt,
     Statement,
     UnaryCondition,
     Value,
@@ -23,6 +25,7 @@ from src.parser.parser import (
 
 __all__ = [
     "ASTNode",
+    "AggregateStmt",
     "BinaryCondition",
     "Comparison",
     "Condition",
@@ -31,6 +34,7 @@ __all__ = [
     "PlotStmt",
     "Program",
     "SelectStmt",
+    "SortStmt",
     "Statement",
     "UnaryCondition",
     "Value",

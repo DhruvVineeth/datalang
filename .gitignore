@@ -2,3 +2,4 @@ LOAD "sales.csv"
 SELECT product, revenue
 FILTER revenue > 1000
 PLOT BAR product, revenue
+benchmarks/generated/

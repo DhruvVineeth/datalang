@@ -1,0 +1,4 @@
+LOAD "sales.csv" AS sales;
+AGGREGATE SUM(revenue) FROM sales GROUP BY product;
+FILTER sales WHERE sum_revenue > 1000;
+SORT sum_revenue DESC FROM sales;

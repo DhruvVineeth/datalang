@@ -34,6 +34,9 @@ class Symbol:
     dataset: Optional[str] = None
     file_path: Optional[str] = None
     columns: Dict[str, "Symbol"] = field(default_factory=dict)
+    # Dataset field order, including repeated names produced by SELECT. The
+    # symbol map stores each name's type; this list describes the actual table.
+    column_order: List[str] = field(default_factory=list)
 
 
 class SymbolTable:
@@ -46,10 +49,15 @@ class SymbolTable:
 
     def __init__(self) -> None:
         self._datasets: Dict[str, Symbol] = {}
+        # Validated column-type snapshots keyed by AST identity, so later
+        # statements cannot overwrite type information needed for IR lowering.
+        self.statement_schemas: Dict[int, Dict[str, str]] = {}
 
     def insert(self, symbol: Symbol) -> None:
         """Insert a dataset or column symbol."""
         if symbol.symbol_type == DATASET:
+            if not symbol.column_order:
+                symbol.column_order = list(symbol.columns)
             self._datasets[symbol.name] = symbol
             return
         if symbol.symbol_type == COLUMN:
@@ -58,6 +66,8 @@ class SymbolTable:
             dataset = self.lookup(symbol.dataset)
             if dataset is None or dataset.symbol_type != DATASET:
                 raise KeyError(f"Dataset '{symbol.dataset}' is not in the symbol table")
+            if symbol.name not in dataset.columns:
+                dataset.column_order.append(symbol.name)
             dataset.columns[symbol.name] = symbol
             return
         raise ValueError(f"Unknown symbol type: {symbol.symbol_type}")
@@ -117,12 +127,27 @@ class SymbolTable:
         """Iterate over loaded dataset symbols."""
         return iter(self._datasets.values())
 
+    def replace_columns(
+        self, dataset_name: str, columns: Dict[str, str], column_order: Optional[List[str]] = None,
+    ) -> None:
+        """Advance a dataset's schema without losing its LOAD path/identity."""
+        dataset = self._datasets[dataset_name]
+        order = list(columns) if column_order is None else list(column_order)
+        if set(order) != set(columns):
+            raise ValueError("Column order must describe exactly the schema's column names")
+        symbols = {
+            name: Symbol(name=name, data_type=data_type, symbol_type=COLUMN, dataset=dataset_name)
+            for name, data_type in columns.items()
+        }
+        dataset.columns = symbols
+        dataset.column_order = order
+
     def all_symbols(self) -> List[Symbol]:
         """Flat list of dataset symbols followed by their columns."""
         symbols: List[Symbol] = []
         for dataset in self._datasets.values():
             symbols.append(dataset)
-            symbols.extend(dataset.columns.values())
+            symbols.extend(dataset.columns[name] for name in dataset.column_order)
         return symbols
 
     def format_table(self) -> str:

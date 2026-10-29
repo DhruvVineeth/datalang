@@ -15,7 +15,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.executor import ExecutionEngine, ExecutionError
-from src.interpreter.ir import IRGenerator
+from src.interpreter.ir import IRError, IRGenerator
+from src.interpreter.optimizer import optimize_ir
 from src.lexer.lexer import Lexer, TokenType
 from src.parser.parser import ParseError, Parser, print_ast
 from src.semantic.semantic import SemanticAnalysisError, SemanticAnalyzer
@@ -27,6 +28,7 @@ def compile_source(
     dump_ast: bool = False,
     dump_ir: bool = False,
     execute: bool = True,
+    optimize: bool = True,
 ) -> int:
     tokens = Lexer(source).tokenize()
     lexical_errors = [token for token in tokens if token.type == TokenType.ERROR]
@@ -40,10 +42,6 @@ def compile_source(
         print(exc)
         return 1
 
-    if dump_ast:
-        print_ast(program)
-        print()
-
     analyzer = SemanticAnalyzer(source_dir=source_dir)
     try:
         table = analyzer.analyze(program)
@@ -51,12 +49,20 @@ def compile_source(
         print(exc)
         return 1
 
-    ir_program = IRGenerator(table).generate(program)
-
-    if dump_ir:
-        print("Intermediate representation")
-        print(ir_program.format())
+    if dump_ast:
+        print_ast(program)
         print()
+
+    try:
+        ir_program = IRGenerator(table).generate(program)
+        ir_program = optimize_ir(ir_program, enabled=optimize)
+        if dump_ir:
+            print("Intermediate representation")
+            print(ir_program.format())
+            print()
+    except IRError as exc:
+        print(exc)
+        return 1
 
     print("Semantic analysis passed.")
     print()
@@ -92,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ast", action="store_true", help="Print the AST")
     parser.add_argument("--ir", action="store_true", help="Print the intermediate representation")
     parser.add_argument(
+        "--no-optimize", action="store_true",
+        help="Disable guarded double-NOT optimization",
+    )
+    parser.add_argument(
         "--no-execute",
         action="store_true",
         help="Stop after IR generation (do not run the execution engine)",
@@ -100,11 +110,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.source:
         path = Path(args.source)
-        if not path.is_file():
-            print(f"File not found: {path}")
-            return 1
         try:
             source = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            print(f"Runtime error: Source file not found: '{path}'")
+            return 1
         except (OSError, UnicodeError) as exc:
             print(f"Runtime error: Cannot read source '{path}': {exc}")
             return 1
@@ -114,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
             dump_ast=args.ast,
             dump_ir=args.ir,
             execute=not args.no_execute,
+            optimize=not args.no_optimize,
         )
 
     print("Usage: python -m src.main <program.dl>")

@@ -9,14 +9,18 @@ the program is logically meaningful:
   only to loaded datasets and existing columns.
 * FILTER comparisons use compatible types and applicable operators.
 * Visualization columns exist and are valid for the chosen chart type.
+* Aggregates validate target/key types and advance the dataset's output schema.
+* Sorting checks the current schema and preserves its column names and types.
 """
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 from typing import List, Optional, Union
 
 from src.ast import (
+    AggregateStmt,
     BinaryCondition,
     Comparison,
     Condition,
@@ -25,9 +29,12 @@ from src.ast import (
     PlotStmt,
     Program,
     SelectStmt,
+    SortStmt,
     UnaryCondition,
 )
 from src.symbol_table.symbol_table import (
+    INTEGER,
+    NUMERIC,
     STRING,
     SymbolTable,
     inspect_csv_schema,
@@ -114,6 +121,10 @@ class SemanticAnalyzer:
                 self._check_filter(statement)
             elif isinstance(statement, PlotStmt):
                 self._check_plot(statement)
+            elif isinstance(statement, AggregateStmt):
+                self._check_aggregate(statement)
+            elif isinstance(statement, SortStmt):
+                self._check_sort(statement)
             else:
                 self._error(
                     f"Unsupported statement type '{type(statement).__name__}'",
@@ -148,8 +159,11 @@ class SemanticAnalyzer:
                 stmt.column,
             )
             return
-        except (ValueError, OSError, UnicodeError) as exc:
-            self._error(str(exc), stmt.line, stmt.column)
+        except (ValueError, OSError, UnicodeError, csv.Error) as exc:
+            self._error(
+                f"Cannot load dataset '{stmt.variable}' from '{stmt.file_path}': {exc}",
+                stmt.line, stmt.column,
+            )
             return
 
         self.symbol_table.insert_dataset(stmt.variable, str(resolved), columns)
@@ -167,8 +181,71 @@ class SemanticAnalyzer:
     def _check_select(self, stmt: SelectStmt) -> None:
         if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column):
             return
-        for column_name in stmt.columns:
-            self._require_column(stmt.source, column_name, stmt.line, stmt.column)
+        valid = [
+            self._require_column(stmt.source, column_name, stmt.line, stmt.column, allow_ambiguous=True)
+            for column_name in stmt.columns
+        ]
+        if all(valid):
+            input_order = self.symbol_table.lookup(stmt.source).column_order
+            # Projection preserves pandas' existing expansion of repeated
+            # names: each requested name selects every matching input field.
+            output_order = [name for requested in stmt.columns for name in input_order if name == requested]
+            columns = {
+                name: self.symbol_table.lookup_column(stmt.source, name).data_type
+                for name in stmt.columns
+            }
+            self.symbol_table.replace_columns(stmt.source, columns, output_order)
+
+    def _check_sort(self, stmt: SortStmt) -> None:
+        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column):
+            return
+        if not self._require_column(stmt.source, stmt.column_name, stmt.line, stmt.column):
+            return
+        column = self.symbol_table.lookup_column(stmt.source, stmt.column_name)
+        if column.data_type not in {INTEGER, NUMERIC, STRING}:
+            self._error(
+                f"SORT cannot order column '{stmt.column_name}' of type {column.data_type}",
+                stmt.line, stmt.column,
+            )
+            return
+        self.symbol_table.statement_schemas[id(stmt)] = {
+            name: symbol.data_type
+            for name, symbol in self.symbol_table.lookup(stmt.source).columns.items()
+        }
+
+    def _check_aggregate(self, stmt: AggregateStmt) -> None:
+        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column):
+            return
+        if stmt.function not in {"SUM", "AVG", "COUNT", "MIN", "MAX"}:
+            self._error(f"Unsupported aggregate function '{stmt.function}'", stmt.line, stmt.column)
+            return
+        valid = self._require_column(stmt.source, stmt.column_name, stmt.line, stmt.column)
+        if stmt.group_by is not None:
+            valid = self._require_column(stmt.source, stmt.group_by, stmt.line, stmt.column) and valid
+        if not valid:
+            return
+        target = self.symbol_table.lookup_column(stmt.source, stmt.column_name)
+        if stmt.function != "COUNT" and not is_numeric_type(target.data_type):
+            self._error(
+                f"{stmt.function} requires a numeric column: '{stmt.column_name}' is {target.data_type}",
+                stmt.line, stmt.column,
+            )
+            return
+        result_name = f"{stmt.function.lower()}_{stmt.column_name}"
+        if result_name == stmt.group_by:
+            self._error(f"Aggregate output name '{result_name}' conflicts with grouping column", stmt.line, stmt.column)
+            return
+        result_type = target.data_type
+        if stmt.function == "COUNT":
+            result_type = INTEGER
+        elif stmt.function == "AVG":
+            result_type = NUMERIC
+        columns = {}
+        if stmt.group_by is not None:
+            columns[stmt.group_by] = self.symbol_table.lookup_column(stmt.source, stmt.group_by).data_type
+        columns[result_name] = result_type
+        self.symbol_table.statement_schemas[id(stmt)] = columns.copy()
+        self.symbol_table.replace_columns(stmt.source, columns)
 
     # ------------------------------------------------------------------ #
     # FILTER
@@ -177,7 +254,13 @@ class SemanticAnalyzer:
     def _check_filter(self, stmt: FilterStmt) -> None:
         if not self._require_loaded_dataset(stmt.dataset, stmt.line, stmt.column):
             return
-        self._check_condition(stmt.dataset, stmt.condition)
+        try:
+            self._check_condition(stmt.dataset, stmt.condition)
+        except RecursionError:
+            self._error(
+                "FILTER condition nesting is too deep; simplify nested expressions",
+                stmt.line, stmt.column,
+            )
 
     def _check_condition(self, dataset: str, condition: Condition) -> None:
         if isinstance(condition, Comparison):
@@ -189,14 +272,9 @@ class SemanticAnalyzer:
             self._check_condition(dataset, condition.right)
 
     def _check_comparison(self, dataset: str, comparison: Comparison) -> None:
-        column = self.symbol_table.lookup_column(dataset, comparison.column_name)
-        if column is None:
-            self._error(
-                f"Column '{comparison.column_name}' does not exist in dataset '{dataset}'",
-                comparison.line,
-                comparison.column,
-            )
+        if not self._require_column(dataset, comparison.column_name, comparison.line, comparison.column):
             return
+        column = self.symbol_table.lookup_column(dataset, comparison.column_name)
 
         op = comparison.operator
         value_kind = comparison.value.type
@@ -263,6 +341,9 @@ class SemanticAnalyzer:
             )
             return
 
+        if not self._require_column(stmt.source, stmt.column_name, stmt.line, stmt.column):
+            return
+
         if stmt.chart_type in _NUMERIC_CHARTS and not is_numeric_type(column.data_type):
             self._error(
                 f"Invalid visualization column '{stmt.column_name}' for "
@@ -291,8 +372,15 @@ class SemanticAnalyzer:
         column_name: str,
         line: Optional[int],
         column: Optional[int],
+        allow_ambiguous: bool = False,
     ) -> bool:
         if self.symbol_table.column_exists(dataset, column_name):
+            if not allow_ambiguous and self.symbol_table.lookup(dataset).column_order.count(column_name) > 1:
+                self._error(
+                    f"Column '{column_name}' is ambiguous in dataset '{dataset}'",
+                    line, column,
+                )
+                return False
             return True
         self._error(
             f"Column '{column_name}' does not exist in dataset '{dataset}'",

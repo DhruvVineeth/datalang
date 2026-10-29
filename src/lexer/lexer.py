@@ -7,6 +7,7 @@ delimiters with comprehensive error reporting.
 """
 
 from enum import Enum, auto
+import math
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -286,7 +287,7 @@ class Lexer:
         The string value is stored in the token's literal field with escape sequences processed.
         """
         start_line = self.line
-        start_col = self.column
+        start_pos = self.position
         self._advance()  # Skip opening quote
         
         value = ''
@@ -320,20 +321,13 @@ class Lexer:
         
         if self._is_at_end():
             # String was not closed
-            self.tokens.append(Token(
-                TokenType.ERROR,
-                self.source[self.position - (self.column - start_col):self.position],
-                None,
-                start_line,
-                start_col
-            ))
-            self.tokens[-1].lexeme = f'Unterminated string (started at line {start_line})'
+            self._add_error_token(f'Unterminated string (started at line {start_line})')
             return
         
         # Skip closing quote
         self._advance()
         
-        self._add_token(TokenType.STRING_LIT, f'"{value}"', value)
+        self._add_token(TokenType.STRING_LIT, self.source[start_pos:self.position], value)
     
     def _scan_number(self) -> None:
         """
@@ -361,12 +355,28 @@ class Lexer:
             while not self._is_at_end() and self._current_char().isdigit():
                 self._advance()
             
-            lexeme = self.source[start_pos:self.position]
-            self._add_token(TokenType.FLOAT_LIT, lexeme, float(lexeme))
+            token_type = TokenType.FLOAT_LIT
         else:
-            # This is an integer
-            lexeme = self.source[start_pos:self.position]
-            self._add_token(TokenType.INT_LIT, lexeme, int(lexeme))
+            token_type = TokenType.INT_LIT
+
+        # A digit-prefixed identifier or second decimal point is one malformed
+        # literal, not a valid number followed by unrelated identifier tokens.
+        if not self._is_at_end() and (self._current_char().isalpha() or self._current_char() in '_.'):
+            while not self._is_at_end() and (self._current_char().isalnum() or self._current_char() in '_.'):
+                self._advance()
+            self._add_error_token(f"Invalid numeric literal: {self.source[start_pos:self.position]!r}")
+            return
+        lexeme = self.source[start_pos:self.position]
+        preview = lexeme if len(lexeme) <= 60 else lexeme[:57] + '...'
+        try:
+            literal = float(lexeme) if token_type == TokenType.FLOAT_LIT else int(lexeme)
+        except ValueError:
+            self._add_error_token(f"Invalid numeric literal: {preview!r} (cannot represent this value)")
+            return
+        if token_type == TokenType.FLOAT_LIT and not math.isfinite(literal):
+            self._add_error_token(f"Numeric literal is out of range: {preview!r}")
+            return
+        self._add_token(token_type, lexeme, literal)
     
     def _scan_identifier(self) -> None:
         """

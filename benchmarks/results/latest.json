@@ -1,0 +1,1035 @@
+{
+  "status": "complete",
+  "recorded_at_utc": "2026-10-28T06:32:45.506056+00:00",
+  "environment": {
+    "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+    "python_implementation": "CPython",
+    "executable": "C:\\Users\\vinee\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\python.exe",
+    "os": "Windows-10-10.0.26200-SP0",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "logical_cpus": 16,
+    "pandas": "3.0.5",
+    "numpy": "2.3.4",
+    "matplotlib": "3.11.2",
+    "clock": {
+      "implementation": "QueryPerformanceCounter()",
+      "resolution_seconds": 1e-07,
+      "monotonic": true
+    },
+    "gc_enabled": true,
+    "thread_environment": {
+      "OMP_NUM_THREADS": null,
+      "MKL_NUM_THREADS": null,
+      "OPENBLAS_NUM_THREADS": null,
+      "PYTHONHASHSEED": null
+    },
+    "git_commit": "26359065dba6ab6ad38da9a2105529a8820432b1",
+    "git_status": [
+      " M .gitignore",
+      " M README.md",
+      " M examples/example.dl",
+      " M examples/visualizations.dl",
+      " M src/__pycache__/ast.cpython-311.pyc",
+      " M src/__pycache__/executor.cpython-311.pyc",
+      " M src/__pycache__/main.cpython-311.pyc",
+      " M src/ast.py",
+      " M src/executor.py",
+      " M src/interpreter/__pycache__/ir.cpython-311.pyc",
+      " M src/interpreter/ir.py",
+      " M src/lexer/__pycache__/lexer.cpython-311.pyc",
+      " M src/lexer/lexer.py",
+      " M src/main.py",
+      " M src/parser/__pycache__/parser.cpython-311.pyc",
+      " M src/parser/parser.py",
+      " M src/semantic/__pycache__/semantic.cpython-311.pyc",
+      " M src/semantic/semantic.py",
+      " M src/symbol_table/__pycache__/symbol_table.cpython-311.pyc",
+      " M src/symbol_table/symbol_table.py",
+      "?? benchmarks/",
+      "?? docs/benchmark.md",
+      "?? docs/diagnostics-audit.md",
+      "?? docs/ir-optimization.md",
+      "?? docs/phase3-aggregation-validation.md",
+      "?? docs/phase3-expected-results.md",
+      "?? docs/phase3-sorting-validation.md",
+      "?? docs/schema-propagation-audit.md",
+      "?? docs/specification-tests.md",
+      "?? examples/aggregation.dl",
+      "?? examples/sorting.dl",
+      "?? src/interpreter/__pycache__/optimizer.cpython-311.pyc",
+      "?? src/interpreter/optimizer.py",
+      "?? tests/conftest.py",
+      "?? tests/e2e/",
+      "?? tests/fixtures/",
+      "?? tests/spec_oracles.py",
+      "?? tests/test_aggregate_execution.py",
+      "?? tests/test_aggregate_ir.py",
+      "?? tests/test_aggregate_parser.py",
+      "?? tests/test_aggregate_semantic.py",
+      "?? tests/test_diagnostics.py",
+      "?? tests/test_frontend_diagnostics.py",
+      "?? tests/test_optimizer.py",
+      "?? tests/test_schema_propagation.py",
+      "?? tests/test_sort_execution.py",
+      "?? tests/test_sort_ir.py",
+      "?? tests/test_sort_parser.py",
+      "?? tests/test_sort_semantic.py",
+      "?? tests/unit/"
+    ],
+    "source_sha256": {
+      "src/ast.py": "de66e144af4ed028933087622960af12a8ce8167a7a6e5d461a629da7f4df369",
+      "src/executor.py": "a709942de5810135c3f39afff2be4f945f188b0d73b3c18413ce8355185f9a77",
+      "src/interpreter/ir.py": "76191a0c0832b065afa4d64a2378dd9e1ec208770fd112debd699d48f7a54d8e",
+      "src/interpreter/optimizer.py": "7fce171b989f1c3c57086937fb827141a007098243f2002931ef264eb62ae8c1",
+      "src/lexer/lexer.py": "4a05b29d9b63322d24938bb95de2a5ede81427c55f6060979bcc4e251f2712ca",
+      "src/main.py": "be332133ab8cddd68e907cb2cbab6974b4d5d1577936f2f9c5590cea3a6594ac",
+      "src/parser/parser.py": "d1d06b4c93e15cff316a80496770d2dee2ea41a30d8a57e5cef01ed60431ae2b",
+      "src/semantic/semantic.py": "6e4090e97fd0c17a50d8b4f675ed661e9ea26b52647b9f859b6bad906e56858b",
+      "src/symbol_table/symbol_table.py": "1656c67c4866dc51d270471850dd3fa38dd4db83a2b78b12bcdf9475060919da",
+      "benchmarks/run_benchmark.py": "71ca11cbf4caeeb11632599d58e8d5d1b38a65b11db4733ba38aee6f094ed1ab"
+    }
+  },
+  "config": {
+    "rows": [
+      1000,
+      10000,
+      100000
+    ],
+    "repetitions": 5,
+    "warmups": 1,
+    "generator": "fixed nine-row pattern v1; no randomness",
+    "source": "LOAD \"data.csv\" AS data;\nSELECT group_key, amount, units FROM data;\nFILTER data WHERE NOT NOT units >= 1;\nAGGREGATE SUM(amount) FROM data GROUP BY group_key;\nSORT sum_amount DESC FROM data;\n",
+    "source_sha256": "71353991989cdd3a53b61d9b08574315a4052cec205d24d4765a1dd6b6958e99",
+    "command": [
+      "C:\\Users\\vinee\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\python.exe",
+      "-B",
+      "-m",
+      "benchmarks.run_benchmark",
+      "--rows",
+      "1000",
+      "10000",
+      "100000",
+      "--repetitions",
+      "5",
+      "--warmups",
+      "1"
+    ],
+    "schema_inspection_is_subset": true,
+    "cache_policy": "warm; OS cache not controlled"
+  },
+  "results": [
+    {
+      "name": "small",
+      "rows": 1000,
+      "csv_bytes": 11254,
+      "csv_sha256": "5c668fed2af28656b63d243372193f7d4e2859dad5c6ce394f3d972168e73a52",
+      "directory": "C:\\Users\\vinee\\Documents\\VIT\\Sem 5\\Compiler Design\\datalang\\benchmarks\\generated\\small",
+      "expected_rows": [
+        [
+          "z",
+          897.5
+        ],
+        [
+          null,
+          666
+        ],
+        [
+          "b",
+          -222
+        ],
+        [
+          "a",
+          null
+        ]
+      ],
+      "expected_selected_rows": 778,
+      "preflight": "passed in both modes; every intermediate table equivalent",
+      "optimized": false,
+      "repetitions": 5,
+      "warmups": 1,
+      "samples": [
+        {
+          "lex_ns": 292000,
+          "parse_ns": 107800,
+          "semantic_total_ns": 3187700,
+          "schema_inspection_ns": 2501900,
+          "schema_inspection_calls": 1,
+          "ir_ns": 40300,
+          "optimize_ns": 800,
+          "compile_total_ns": 3628600,
+          "execute_ns": 4842800,
+          "repetition": 1,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 294300,
+          "parse_ns": 107500,
+          "semantic_total_ns": 3204000,
+          "schema_inspection_ns": 2518400,
+          "schema_inspection_calls": 1,
+          "ir_ns": 40700,
+          "optimize_ns": 900,
+          "compile_total_ns": 3647400,
+          "execute_ns": 4915600,
+          "repetition": 2,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 283100,
+          "parse_ns": 97600,
+          "semantic_total_ns": 3216300,
+          "schema_inspection_ns": 2623100,
+          "schema_inspection_calls": 1,
+          "ir_ns": 56900,
+          "optimize_ns": 1600,
+          "compile_total_ns": 3655500,
+          "execute_ns": 6872600,
+          "repetition": 3,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 298200,
+          "parse_ns": 102600,
+          "semantic_total_ns": 3051200,
+          "schema_inspection_ns": 2446000,
+          "schema_inspection_calls": 1,
+          "ir_ns": 33800,
+          "optimize_ns": 600,
+          "compile_total_ns": 3486400,
+          "execute_ns": 6639800,
+          "repetition": 4,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 298700,
+          "parse_ns": 106700,
+          "semantic_total_ns": 3180100,
+          "schema_inspection_ns": 2455500,
+          "schema_inspection_calls": 1,
+          "ir_ns": 40600,
+          "optimize_ns": 1100,
+          "compile_total_ns": 3627200,
+          "execute_ns": 5348800,
+          "repetition": 5,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        }
+      ],
+      "summary": {
+        "lex_ns": {
+          "median_ns": 294300,
+          "min_ns": 283100,
+          "max_ns": 298700,
+          "stdev_ns": 6322.420422591335
+        },
+        "parse_ns": {
+          "median_ns": 106700,
+          "min_ns": 97600,
+          "max_ns": 107800,
+          "stdev_ns": 4356.948473415769
+        },
+        "semantic_total_ns": {
+          "median_ns": 3187700,
+          "min_ns": 3051200,
+          "max_ns": 3216300,
+          "stdev_ns": 66718.68553861055
+        },
+        "schema_inspection_ns": {
+          "median_ns": 2501900,
+          "min_ns": 2446000,
+          "max_ns": 2623100,
+          "stdev_ns": 70690.92586746902
+        },
+        "ir_ns": {
+          "median_ns": 40600,
+          "min_ns": 33800,
+          "max_ns": 56900,
+          "stdev_ns": 8583.88024147588
+        },
+        "optimize_ns": {
+          "median_ns": 900,
+          "min_ns": 600,
+          "max_ns": 1600,
+          "stdev_ns": 380.7886552931954
+        },
+        "compile_total_ns": {
+          "median_ns": 3628600,
+          "min_ns": 3486400,
+          "max_ns": 3655500,
+          "stdev_ns": 69611.36401479287
+        },
+        "execute_ns": {
+          "median_ns": 5348800,
+          "min_ns": 4842800,
+          "max_ns": 6872600,
+          "stdev_ns": 965501.2439142686
+        }
+      }
+    },
+    {
+      "name": "small",
+      "rows": 1000,
+      "csv_bytes": 11254,
+      "csv_sha256": "5c668fed2af28656b63d243372193f7d4e2859dad5c6ce394f3d972168e73a52",
+      "directory": "C:\\Users\\vinee\\Documents\\VIT\\Sem 5\\Compiler Design\\datalang\\benchmarks\\generated\\small",
+      "expected_rows": [
+        [
+          "z",
+          897.5
+        ],
+        [
+          null,
+          666
+        ],
+        [
+          "b",
+          -222
+        ],
+        [
+          "a",
+          null
+        ]
+      ],
+      "expected_selected_rows": 778,
+      "preflight": "passed in both modes; every intermediate table equivalent",
+      "optimized": true,
+      "repetitions": 5,
+      "warmups": 1,
+      "samples": [
+        {
+          "lex_ns": 281800,
+          "parse_ns": 99400,
+          "semantic_total_ns": 4492700,
+          "schema_inspection_ns": 3618600,
+          "schema_inspection_calls": 1,
+          "ir_ns": 44200,
+          "optimize_ns": 96000,
+          "compile_total_ns": 5014100,
+          "execute_ns": 6287400,
+          "repetition": 1,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 286100,
+          "parse_ns": 103400,
+          "semantic_total_ns": 3124100,
+          "schema_inspection_ns": 2468100,
+          "schema_inspection_calls": 1,
+          "ir_ns": 36100,
+          "optimize_ns": 39800,
+          "compile_total_ns": 3589500,
+          "execute_ns": 6292700,
+          "repetition": 2,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 293300,
+          "parse_ns": 107000,
+          "semantic_total_ns": 3117100,
+          "schema_inspection_ns": 2468500,
+          "schema_inspection_calls": 1,
+          "ir_ns": 38200,
+          "optimize_ns": 42700,
+          "compile_total_ns": 3598300,
+          "execute_ns": 4766400,
+          "repetition": 3,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 531400,
+          "parse_ns": 185500,
+          "semantic_total_ns": 4418300,
+          "schema_inspection_ns": 3216400,
+          "schema_inspection_calls": 1,
+          "ir_ns": 45200,
+          "optimize_ns": 59100,
+          "compile_total_ns": 5239500,
+          "execute_ns": 5178800,
+          "repetition": 4,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 299000,
+          "parse_ns": 102500,
+          "semantic_total_ns": 3212800,
+          "schema_inspection_ns": 2575400,
+          "schema_inspection_calls": 1,
+          "ir_ns": 53900,
+          "optimize_ns": 58300,
+          "compile_total_ns": 3726500,
+          "execute_ns": 5823200,
+          "repetition": 5,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        }
+      ],
+      "summary": {
+        "lex_ns": {
+          "median_ns": 293300,
+          "min_ns": 281800,
+          "max_ns": 531400,
+          "stdev_ns": 108136.70514677244
+        },
+        "parse_ns": {
+          "median_ns": 103400,
+          "min_ns": 99400,
+          "max_ns": 185500,
+          "stdev_ns": 36960.96589646975
+        },
+        "semantic_total_ns": {
+          "median_ns": 3212800,
+          "min_ns": 3117100,
+          "max_ns": 4492700,
+          "stdev_ns": 715800.2933779785
+        },
+        "schema_inspection_ns": {
+          "median_ns": 2575400,
+          "min_ns": 2468100,
+          "max_ns": 3618600,
+          "stdev_ns": 521993.32850142824
+        },
+        "ir_ns": {
+          "median_ns": 44200,
+          "min_ns": 36100,
+          "max_ns": 53900,
+          "stdev_ns": 6971.154854111333
+        },
+        "optimize_ns": {
+          "median_ns": 58300,
+          "min_ns": 39800,
+          "max_ns": 96000,
+          "stdev_ns": 22381.17512553798
+        },
+        "compile_total_ns": {
+          "median_ns": 3726500,
+          "min_ns": 3589500,
+          "max_ns": 5239500,
+          "stdev_ns": 821071.9164604279
+        },
+        "execute_ns": {
+          "median_ns": 5823200,
+          "min_ns": 4766400,
+          "max_ns": 6292700,
+          "stdev_ns": 680106.2858112693
+        }
+      }
+    },
+    {
+      "name": "medium",
+      "rows": 10000,
+      "csv_bytes": 122255,
+      "csv_sha256": "f62c95ffe40e392a28cb2915ae052013e80f6cc5e27b06dfa60fb905f95c36ed",
+      "directory": "C:\\Users\\vinee\\Documents\\VIT\\Sem 5\\Compiler Design\\datalang\\benchmarks\\generated\\medium",
+      "expected_rows": [
+        [
+          "z",
+          8897.5
+        ],
+        [
+          null,
+          6666
+        ],
+        [
+          "b",
+          -2222
+        ],
+        [
+          "a",
+          null
+        ]
+      ],
+      "expected_selected_rows": 7778,
+      "preflight": "passed in both modes; every intermediate table equivalent",
+      "optimized": false,
+      "repetitions": 5,
+      "warmups": 1,
+      "samples": [
+        {
+          "lex_ns": 497900,
+          "parse_ns": 168400,
+          "semantic_total_ns": 25168600,
+          "schema_inspection_ns": 24142900,
+          "schema_inspection_calls": 1,
+          "ir_ns": 46800,
+          "optimize_ns": 800,
+          "compile_total_ns": 25882500,
+          "execute_ns": 12240500,
+          "repetition": 1,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 295200,
+          "parse_ns": 107200,
+          "semantic_total_ns": 26114700,
+          "schema_inspection_ns": 25428900,
+          "schema_inspection_calls": 1,
+          "ir_ns": 47000,
+          "optimize_ns": 1300,
+          "compile_total_ns": 26565400,
+          "execute_ns": 11766700,
+          "repetition": 2,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 290200,
+          "parse_ns": 102100,
+          "semantic_total_ns": 24332700,
+          "schema_inspection_ns": 23678400,
+          "schema_inspection_calls": 1,
+          "ir_ns": 67800,
+          "optimize_ns": 1400,
+          "compile_total_ns": 24794200,
+          "execute_ns": 11797800,
+          "repetition": 3,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 291300,
+          "parse_ns": 106600,
+          "semantic_total_ns": 25269100,
+          "schema_inspection_ns": 24569200,
+          "schema_inspection_calls": 1,
+          "ir_ns": 49000,
+          "optimize_ns": 800,
+          "compile_total_ns": 25716800,
+          "execute_ns": 11161700,
+          "repetition": 4,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 304900,
+          "parse_ns": 107900,
+          "semantic_total_ns": 28359700,
+          "schema_inspection_ns": 27664100,
+          "schema_inspection_calls": 1,
+          "ir_ns": 47100,
+          "optimize_ns": 900,
+          "compile_total_ns": 28820500,
+          "execute_ns": 12512200,
+          "repetition": 5,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        }
+      ],
+      "summary": {
+        "lex_ns": {
+          "median_ns": 295200,
+          "min_ns": 290200,
+          "max_ns": 497900,
+          "stdev_ns": 90745.71615233415
+        },
+        "parse_ns": {
+          "median_ns": 107200,
+          "min_ns": 102100,
+          "max_ns": 168400,
+          "stdev_ns": 28020.581721299077
+        },
+        "semantic_total_ns": {
+          "median_ns": 25269100,
+          "min_ns": 24332700,
+          "max_ns": 28359700,
+          "stdev_ns": 1538879.8549594441
+        },
+        "schema_inspection_ns": {
+          "median_ns": 24569200,
+          "min_ns": 23678400,
+          "max_ns": 27664100,
+          "stdev_ns": 1573329.6841412482
+        },
+        "ir_ns": {
+          "median_ns": 47100,
+          "min_ns": 46800,
+          "max_ns": 67800,
+          "stdev_ns": 9132.798037841416
+        },
+        "optimize_ns": {
+          "median_ns": 900,
+          "min_ns": 800,
+          "max_ns": 1400,
+          "stdev_ns": 288.09720581775866
+        },
+        "compile_total_ns": {
+          "median_ns": 25882500,
+          "min_ns": 24794200,
+          "max_ns": 28820500,
+          "stdev_ns": 1515718.2017116507
+        },
+        "execute_ns": {
+          "median_ns": 11797800,
+          "min_ns": 11161700,
+          "max_ns": 12512200,
+          "stdev_ns": 515737.49815191835
+        }
+      }
+    },
+    {
+      "name": "medium",
+      "rows": 10000,
+      "csv_bytes": 122255,
+      "csv_sha256": "f62c95ffe40e392a28cb2915ae052013e80f6cc5e27b06dfa60fb905f95c36ed",
+      "directory": "C:\\Users\\vinee\\Documents\\VIT\\Sem 5\\Compiler Design\\datalang\\benchmarks\\generated\\medium",
+      "expected_rows": [
+        [
+          "z",
+          8897.5
+        ],
+        [
+          null,
+          6666
+        ],
+        [
+          "b",
+          -2222
+        ],
+        [
+          "a",
+          null
+        ]
+      ],
+      "expected_selected_rows": 7778,
+      "preflight": "passed in both modes; every intermediate table equivalent",
+      "optimized": true,
+      "repetitions": 5,
+      "warmups": 1,
+      "samples": [
+        {
+          "lex_ns": 297600,
+          "parse_ns": 116800,
+          "semantic_total_ns": 25673800,
+          "schema_inspection_ns": 25038700,
+          "schema_inspection_calls": 1,
+          "ir_ns": 46300,
+          "optimize_ns": 60200,
+          "compile_total_ns": 26194700,
+          "execute_ns": 10897800,
+          "repetition": 1,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 289100,
+          "parse_ns": 103200,
+          "semantic_total_ns": 26270200,
+          "schema_inspection_ns": 25307000,
+          "schema_inspection_calls": 1,
+          "ir_ns": 47200,
+          "optimize_ns": 65400,
+          "compile_total_ns": 26775100,
+          "execute_ns": 10881200,
+          "repetition": 2,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 288500,
+          "parse_ns": 120900,
+          "semantic_total_ns": 25530900,
+          "schema_inspection_ns": 24709200,
+          "schema_inspection_calls": 1,
+          "ir_ns": 65000,
+          "optimize_ns": 71200,
+          "compile_total_ns": 26076500,
+          "execute_ns": 11804600,
+          "repetition": 3,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 299300,
+          "parse_ns": 108600,
+          "semantic_total_ns": 25539100,
+          "schema_inspection_ns": 24722500,
+          "schema_inspection_calls": 1,
+          "ir_ns": 46200,
+          "optimize_ns": 53600,
+          "compile_total_ns": 26046800,
+          "execute_ns": 11567700,
+          "repetition": 4,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 302600,
+          "parse_ns": 107000,
+          "semantic_total_ns": 27236100,
+          "schema_inspection_ns": 26097700,
+          "schema_inspection_calls": 1,
+          "ir_ns": 47400,
+          "optimize_ns": 51500,
+          "compile_total_ns": 27744600,
+          "execute_ns": 11474300,
+          "repetition": 5,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        }
+      ],
+      "summary": {
+        "lex_ns": {
+          "median_ns": 297600,
+          "min_ns": 288500,
+          "max_ns": 302600,
+          "stdev_ns": 6308.486347769963
+        },
+        "parse_ns": {
+          "median_ns": 108600,
+          "min_ns": 103200,
+          "max_ns": 120900,
+          "stdev_ns": 7310.950690573696
+        },
+        "semantic_total_ns": {
+          "median_ns": 25673800,
+          "min_ns": 25530900,
+          "max_ns": 27236100,
+          "stdev_ns": 729268.6932811528
+        },
+        "schema_inspection_ns": {
+          "median_ns": 25038700,
+          "min_ns": 24709200,
+          "max_ns": 26097700,
+          "stdev_ns": 572080.1665850687
+        },
+        "ir_ns": {
+          "median_ns": 47200,
+          "min_ns": 46200,
+          "max_ns": 65000,
+          "stdev_ns": 8167.741425877781
+        },
+        "optimize_ns": {
+          "median_ns": 60200,
+          "min_ns": 51500,
+          "max_ns": 71200,
+          "stdev_ns": 8172.025452725903
+        },
+        "compile_total_ns": {
+          "median_ns": 26194700,
+          "min_ns": 26046800,
+          "max_ns": 27744600,
+          "stdev_ns": 721084.5116905507
+        },
+        "execute_ns": {
+          "median_ns": 11474300,
+          "min_ns": 10881200,
+          "max_ns": 11804600,
+          "stdev_ns": 415532.23340674787
+        }
+      }
+    },
+    {
+      "name": "larger",
+      "rows": 100000,
+      "csv_bytes": 1322256,
+      "csv_sha256": "c80ad2fdb2aa9d0135c3b5a75d753984abb5254e290d800f400a4e8e6e99c00d",
+      "directory": "C:\\Users\\vinee\\Documents\\VIT\\Sem 5\\Compiler Design\\datalang\\benchmarks\\generated\\larger",
+      "expected_rows": [
+        [
+          "z",
+          88897.5
+        ],
+        [
+          null,
+          66666
+        ],
+        [
+          "b",
+          -22222
+        ],
+        [
+          "a",
+          null
+        ]
+      ],
+      "expected_selected_rows": 77778,
+      "preflight": "passed in both modes; every intermediate table equivalent",
+      "optimized": false,
+      "repetitions": 5,
+      "warmups": 1,
+      "samples": [
+        {
+          "lex_ns": 292500,
+          "parse_ns": 105600,
+          "semantic_total_ns": 238611500,
+          "schema_inspection_ns": 237863800,
+          "schema_inspection_calls": 1,
+          "ir_ns": 48800,
+          "optimize_ns": 1500,
+          "compile_total_ns": 239059900,
+          "execute_ns": 55213500,
+          "repetition": 1,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 526700,
+          "parse_ns": 130400,
+          "semantic_total_ns": 245880900,
+          "schema_inspection_ns": 245159000,
+          "schema_inspection_calls": 1,
+          "ir_ns": 55900,
+          "optimize_ns": 900,
+          "compile_total_ns": 246594800,
+          "execute_ns": 57618500,
+          "repetition": 2,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 312300,
+          "parse_ns": 108500,
+          "semantic_total_ns": 238169600,
+          "schema_inspection_ns": 237403900,
+          "schema_inspection_calls": 1,
+          "ir_ns": 47800,
+          "optimize_ns": 800,
+          "compile_total_ns": 238639000,
+          "execute_ns": 62460700,
+          "repetition": 3,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 308300,
+          "parse_ns": 108100,
+          "semantic_total_ns": 252370700,
+          "schema_inspection_ns": 251643900,
+          "schema_inspection_calls": 1,
+          "ir_ns": 46800,
+          "optimize_ns": 800,
+          "compile_total_ns": 252834700,
+          "execute_ns": 56087600,
+          "repetition": 4,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 300500,
+          "parse_ns": 106700,
+          "semantic_total_ns": 302797800,
+          "schema_inspection_ns": 302059300,
+          "schema_inspection_calls": 1,
+          "ir_ns": 61800,
+          "optimize_ns": 1200,
+          "compile_total_ns": 303268000,
+          "execute_ns": 54518000,
+          "repetition": 5,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        }
+      ],
+      "summary": {
+        "lex_ns": {
+          "median_ns": 308300,
+          "min_ns": 292500,
+          "max_ns": 526700,
+          "stdev_ns": 100150.8262572007
+        },
+        "parse_ns": {
+          "median_ns": 108100,
+          "min_ns": 105600,
+          "max_ns": 130400,
+          "stdev_ns": 10427.99117759504
+        },
+        "semantic_total_ns": {
+          "median_ns": 245880900,
+          "min_ns": 238169600,
+          "max_ns": 302797800,
+          "stdev_ns": 27041374.958108176
+        },
+        "schema_inspection_ns": {
+          "median_ns": 245159000,
+          "min_ns": 237403900,
+          "max_ns": 302059300,
+          "stdev_ns": 27045365.0167085
+        },
+        "ir_ns": {
+          "median_ns": 48800,
+          "min_ns": 46800,
+          "max_ns": 61800,
+          "stdev_ns": 6440.652140893809
+        },
+        "optimize_ns": {
+          "median_ns": 900,
+          "min_ns": 800,
+          "max_ns": 1500,
+          "stdev_ns": 304.9590136395381
+        },
+        "compile_total_ns": {
+          "median_ns": 246594800,
+          "min_ns": 238639000,
+          "max_ns": 303268000,
+          "stdev_ns": 27023511.140986104
+        },
+        "execute_ns": {
+          "median_ns": 56087600,
+          "min_ns": 54518000,
+          "max_ns": 62460700,
+          "stdev_ns": 3171150.3501095623
+        }
+      }
+    },
+    {
+      "name": "larger",
+      "rows": 100000,
+      "csv_bytes": 1322256,
+      "csv_sha256": "c80ad2fdb2aa9d0135c3b5a75d753984abb5254e290d800f400a4e8e6e99c00d",
+      "directory": "C:\\Users\\vinee\\Documents\\VIT\\Sem 5\\Compiler Design\\datalang\\benchmarks\\generated\\larger",
+      "expected_rows": [
+        [
+          "z",
+          88897.5
+        ],
+        [
+          null,
+          66666
+        ],
+        [
+          "b",
+          -22222
+        ],
+        [
+          "a",
+          null
+        ]
+      ],
+      "expected_selected_rows": 77778,
+      "preflight": "passed in both modes; every intermediate table equivalent",
+      "optimized": true,
+      "repetitions": 5,
+      "warmups": 1,
+      "samples": [
+        {
+          "lex_ns": 315800,
+          "parse_ns": 110800,
+          "semantic_total_ns": 242038800,
+          "schema_inspection_ns": 241291200,
+          "schema_inspection_calls": 1,
+          "ir_ns": 48000,
+          "optimize_ns": 53800,
+          "compile_total_ns": 242567200,
+          "execute_ns": 61400700,
+          "repetition": 1,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 298000,
+          "parse_ns": 114300,
+          "semantic_total_ns": 250494400,
+          "schema_inspection_ns": 249702900,
+          "schema_inspection_calls": 1,
+          "ir_ns": 48000,
+          "optimize_ns": 54700,
+          "compile_total_ns": 251009400,
+          "execute_ns": 54992900,
+          "repetition": 2,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 295600,
+          "parse_ns": 107100,
+          "semantic_total_ns": 257195900,
+          "schema_inspection_ns": 256458700,
+          "schema_inspection_calls": 1,
+          "ir_ns": 47900,
+          "optimize_ns": 55000,
+          "compile_total_ns": 257701500,
+          "execute_ns": 60326800,
+          "repetition": 3,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 309100,
+          "parse_ns": 108400,
+          "semantic_total_ns": 247959300,
+          "schema_inspection_ns": 247240900,
+          "schema_inspection_calls": 1,
+          "ir_ns": 47200,
+          "optimize_ns": 67500,
+          "compile_total_ns": 248491500,
+          "execute_ns": 55964100,
+          "repetition": 4,
+          "position_in_pair": 1,
+          "correctness": "passed"
+        },
+        {
+          "lex_ns": 304100,
+          "parse_ns": 127600,
+          "semantic_total_ns": 232728000,
+          "schema_inspection_ns": 231917600,
+          "schema_inspection_calls": 1,
+          "ir_ns": 47100,
+          "optimize_ns": 54600,
+          "compile_total_ns": 233261400,
+          "execute_ns": 55837900,
+          "repetition": 5,
+          "position_in_pair": 2,
+          "correctness": "passed"
+        }
+      ],
+      "summary": {
+        "lex_ns": {
+          "median_ns": 304100,
+          "min_ns": 295600,
+          "max_ns": 315800,
+          "stdev_ns": 8222.955672992528
+        },
+        "parse_ns": {
+          "median_ns": 110800,
+          "min_ns": 107100,
+          "max_ns": 127600,
+          "stdev_ns": 8270.610618328008
+        },
+        "semantic_total_ns": {
+          "median_ns": 247959300,
+          "min_ns": 232728000,
+          "max_ns": 257195900,
+          "stdev_ns": 9235652.065609662
+        },
+        "schema_inspection_ns": {
+          "median_ns": 247240900,
+          "min_ns": 231917600,
+          "max_ns": 256458700,
+          "stdev_ns": 9257778.304917438
+        },
+        "ir_ns": {
+          "median_ns": 47900,
+          "min_ns": 47100,
+          "max_ns": 48000,
+          "stdev_ns": 450.55521304275237
+        },
+        "optimize_ns": {
+          "median_ns": 54700,
+          "min_ns": 53800,
+          "max_ns": 67500,
+          "stdev_ns": 5819.536063983108
+        },
+        "compile_total_ns": {
+          "median_ns": 248491500,
+          "min_ns": 233261400,
+          "max_ns": 257701500,
+          "stdev_ns": 9225581.505520398
+        },
+        "execute_ns": {
+          "median_ns": 55964100,
+          "min_ns": 54992900,
+          "max_ns": 61400700,
+          "stdev_ns": 2932759.537023109
+        }
+      }
+    }
+  ]
+}
