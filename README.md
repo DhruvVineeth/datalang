@@ -155,7 +155,7 @@ The language-processing system converts DataLang programs into an intermediate r
 A basic DataLang program can be written as:
 
 ```text
-LOAD "sales.csv"
-SELECT product, revenue
-FILTER revenue > 1000
-PLOT BAR product, revenue
+LOAD "sales.csv" AS sales;
+SELECT product, revenue FROM sales;
+FILTER revenue > 1000 FROM sales;
+VISUALIZE SCATTER OF quantity FROM sales;
