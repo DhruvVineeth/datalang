@@ -1,0 +1,3 @@
+{
+  "workspaceTrust.description": "Syntax highlighting and editor configuration work in Restricted Mode. Starting the Python analysis backend requires a trusted workspace because it executes the configured Python interpreter and DataLang backend code."
+}

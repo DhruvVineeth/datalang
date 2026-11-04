@@ -50,6 +50,27 @@ produced after successful semantic validation. See the
 Run the tests with `python -m pytest tests`. Visualization tests use the Agg backend
 and inspect actual chart data without opening windows.
 
+Editors can analyze unsaved buffer text independently of the CLI:
+
+```python
+from src.editor.analysis import analyze_document
+
+result = analyze_document(text, document_path="examples/program.dl", document_version=7)
+for diagnostic in result.diagnostics:
+    print(diagnostic.stage, diagnostic.message, diagnostic.line, diagnostic.column)
+```
+
+Analysis runs the existing lexer, parser and semantic analyzer, including CSV
+schema inference. It prints nothing and stops before IR, optimization, execution
+or plotting. Relative LOAD paths use the document's directory; the document need
+not exist on disk. The immutable result echoes the document version and absolute
+path. Diagnostics have `stage` (`lexical`, `syntax`, `semantic`), `message`,
+`severity`, and compiler-style line/column coordinates. `result.ok` indicates
+success. `result.datasets` contains dataset names, resolved CSV paths and ordered
+`columns` entries with `name` and `data_type`, preserving duplicate projections.
+Semantic errors retain the last valid schemas; lexical/syntax errors return no
+schemas. Each call reads current CSV schemas and starts with fresh analysis state.
+
 Aggregation supports one function and an optional single grouping column:
 
 ```text

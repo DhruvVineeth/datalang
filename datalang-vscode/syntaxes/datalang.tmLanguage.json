@@ -1,0 +1,142 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "DataLang",
+  "scopeName": "source.datalang",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#statements" },
+    { "include": "#sortStatement" },
+    { "include": "#tokens" }
+  ],
+  "repository": {
+    "comments": {
+      "name": "comment.line.number-sign.datalang",
+      "begin": "#",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.comment.datalang" }
+      },
+      "end": "$"
+    },
+    "statements": {
+      "name": "meta.statement.datalang",
+      "begin": "(?i)(?<![\\p{L}\\p{N}_])(load|filter|select|aggregate|visualize)(?![\\p{L}\\p{N}_])",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.datalang" }
+      },
+      "end": ";",
+      "endCaptures": {
+        "0": { "name": "punctuation.terminator.statement.datalang" }
+      },
+      "patterns": [
+        { "include": "#tokens" }
+      ]
+    },
+    "sortStatement": {
+      "name": "meta.statement.sort.datalang",
+      "begin": "(?i)(?<![\\p{L}\\p{N}_])(sort)(?![\\p{L}\\p{N}_])",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.datalang" }
+      },
+      "end": ";",
+      "endCaptures": {
+        "0": { "name": "punctuation.terminator.statement.datalang" }
+      },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#keywords" },
+        {
+          "begin": "[\\p{L}_][\\p{L}\\p{N}_]*",
+          "beginCaptures": {
+            "0": { "name": "variable.other.datalang" }
+          },
+          "end": "(?i)(?<![\\p{L}\\p{N}_])(from)(?![\\p{L}\\p{N}_])|(?=;)",
+          "endCaptures": {
+            "1": { "name": "keyword.control.datalang" }
+          },
+          "patterns": [
+            { "include": "#comments" },
+            { "include": "#strings" },
+            {
+              "name": "keyword.other.sort-direction.datalang",
+              "match": "(?i)(?<![\\p{L}\\p{N}_])(asc|desc)(?![\\p{L}\\p{N}_])"
+            },
+            { "include": "#tokens" }
+          ]
+        },
+        { "include": "#tokens" }
+      ]
+    },
+    "tokens": {
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#keywords" },
+        { "include": "#numbers" },
+        { "include": "#operators" },
+        { "include": "#punctuation" },
+        { "include": "#identifiers" }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.datalang",
+      "begin": "\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.datalang" }
+      },
+      "end": "\"",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.datalang" }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.datalang",
+          "match": "\\\\[\"\\\\ntr]"
+        },
+        {
+          "comment": "The lexer preserves unknown escapes verbatim; consume both characters without marking them invalid.",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.datalang",
+          "match": "(?i)(?<![\\p{L}\\p{N}_])(load|as|filter|where|select|from|aggregate|group|by|visualize|of)(?![\\p{L}\\p{N}_])"
+        },
+        {
+          "name": "keyword.operator.logical.datalang",
+          "match": "(?i)(?<![\\p{L}\\p{N}_])(and|or|not)(?![\\p{L}\\p{N}_])"
+        },
+        {
+          "name": "support.function.aggregate.datalang",
+          "match": "(?i)(?<![\\p{L}\\p{N}_])(sum|avg|count|min|max)(?![\\p{L}\\p{N}_])"
+        },
+        {
+          "name": "constant.language.chart-type.datalang",
+          "match": "(?i)(?<![\\p{L}\\p{N}_])(bar|line|scatter|pie)(?![\\p{L}\\p{N}_])"
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.datalang",
+      "match": "(?<![\\p{L}\\p{N}_.])\\p{Nd}+(?:\\.\\p{Nd}+)?(?![\\p{L}\\p{N}_.])"
+    },
+    "operators": {
+      "name": "keyword.operator.comparison.datalang",
+      "match": "==|!=|<=|>=|<|>"
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.terminator.statement.datalang", "match": ";" },
+        { "name": "punctuation.separator.comma.datalang", "match": "," },
+        { "name": "punctuation.section.parens.begin.datalang", "match": "\\(" },
+        { "name": "punctuation.section.parens.end.datalang", "match": "\\)" }
+      ]
+    },
+    "identifiers": {
+      "name": "variable.other.datalang",
+      "match": "[\\p{L}_][\\p{L}\\p{N}_]*"
+    }
+  }
+}

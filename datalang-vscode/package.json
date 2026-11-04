@@ -1,0 +1,96 @@
+{
+  "name": "datalang-vscode",
+  "displayName": "DataLang",
+  "description": "DataLang language support and configuration for its Python analysis backend.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.144.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:datalang"
+  ],
+  "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "%workspaceTrust.description%",
+      "restrictedConfigurations": [
+        "datalang.pythonExecutable",
+        "datalang.backendPath"
+      ]
+    }
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "datalang",
+        "aliases": [
+          "DataLang",
+          "datalang"
+        ],
+        "extensions": [
+          ".dl"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "datalang",
+        "scopeName": "source.datalang",
+        "path": "./syntaxes/datalang.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "DataLang",
+      "properties": {
+        "datalang.pythonExecutable": {
+          "type": "string",
+          "default": "python",
+          "minLength": 1,
+          "scope": "machine-overridable",
+          "markdownDescription": "Python executable name on PATH or absolute path to the interpreter for the DataLang backend. Supply an executable only, without command-line arguments. Backend execution requires a trusted workspace."
+        },
+        "datalang.backendPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Absolute path to the DataLang repository root containing `src/lexer/lexer.py` and `src/parser/parser.py`. Empty means the backend is not configured. Backend execution requires a trusted workspace."
+        },
+        "datalang.analysisDebounceMs": {
+          "type": "integer",
+          "default": 300,
+          "minimum": 0,
+          "maximum": 60000,
+          "scope": "resource",
+          "markdownDescription": "Delay in milliseconds after the last document edit before requesting backend analysis. Set to `0` to request analysis immediately."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "@types/vscode": "^1.144.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
+    "eslint": "^9.39.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  }
+}
