@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 from src.ast import (
     AggregateStmt,
@@ -30,12 +30,14 @@ from src.ast import (
     Program,
     SelectStmt,
     SortStmt,
+    Statement,
     UnaryCondition,
 )
 from src.symbol_table.symbol_table import (
     INTEGER,
     NUMERIC,
     STRING,
+    DatasetSchema,
     SymbolTable,
     inspect_csv_schema,
     is_numeric_type,
@@ -55,6 +57,12 @@ _ORDERING_LEXEMES = {
 
 # LINE and SCATTER require a numeric series. BAR may use any column.
 _NUMERIC_CHARTS = {"LINE", "SCATTER"}
+
+# Called after validation, with the statement's dataset and independent values.
+StatementObserver = Callable[
+    [Statement, Optional[str], Optional[DatasetSchema], Optional[DatasetSchema], bool],
+    None,
+]
 
 
 class SemanticError(Exception):
@@ -99,9 +107,16 @@ class SemanticAnalyzer:
         self.symbol_table = SymbolTable()
         self.errors: List[SemanticError] = []
 
-    def analyze(self, program: Program) -> SymbolTable:
+    def analyze(
+        self, program: Program, *, on_statement: Optional[StatementObserver] = None,
+    ) -> SymbolTable:
         """
         Run semantic checks on `program`.
+
+        If supplied, ``on_statement`` observes each completed check, including
+        failures, with immutable before/after schemas for the named dataset.
+        Checks validate before committing changes, so a failed statement has
+        the same before/after schema. No schema propagation runs in observers.
 
         Returns:
             The populated symbol table if the program is valid.
@@ -113,6 +128,16 @@ class SemanticAnalyzer:
         self.symbol_table = SymbolTable()
 
         for statement in program.statements:
+            dataset_name = (
+                statement.variable if isinstance(statement, LoadStmt)
+                else statement.dataset if isinstance(statement, FilterStmt)
+                else getattr(statement, "source", None)
+            )
+            before = (
+                self.symbol_table.snapshot_dataset(dataset_name)
+                if on_statement is not None and dataset_name is not None else None
+            )
+            error_count = len(self.errors)
             if isinstance(statement, LoadStmt):
                 self._check_load(statement)
             elif isinstance(statement, SelectStmt):
@@ -131,6 +156,12 @@ class SemanticAnalyzer:
                     getattr(statement, "line", None),
                     getattr(statement, "column", None),
                 )
+            if on_statement is not None:
+                after = (
+                    self.symbol_table.snapshot_dataset(dataset_name)
+                    if dataset_name is not None else None
+                )
+                on_statement(statement, dataset_name, before, after, len(self.errors) == error_count)
 
         if self.errors:
             raise SemanticAnalysisError(self.errors)

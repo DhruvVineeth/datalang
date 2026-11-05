@@ -44,7 +44,7 @@ Note on rule (11): the language specification's general form for VISUALIZE is
 a column list, distinguishing it from SELECT.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import sys
 from pathlib import Path
 from typing import List, Optional, Union
@@ -64,6 +64,10 @@ class ASTNode:
     downstream error reporting (semantic analysis, IR generation, etc.)."""
     line: int
     column: int
+    # Parsed statement ranges end just after their terminating semicolon.
+    # Keep existing positional constructors and AST equality unchanged.
+    end_line: Optional[int] = field(default=None, init=False, compare=False, repr=False)
+    end_column: Optional[int] = field(default=None, init=False, compare=False, repr=False)
 
 
 @dataclass
@@ -305,7 +309,11 @@ class Parser:
         """
         statements = []
         while self._current_token().type != TokenType.EOF:
-            statements.append(self._parse_statement())
+            statement = self._parse_statement()
+            terminator = self.tokens[self.position - 1]
+            statement.end_line = terminator.line
+            statement.end_column = terminator.column + len(terminator.lexeme)
+            statements.append(statement)
         return statements
 
     # ------------------------------------------------------------------ #

@@ -24,6 +24,21 @@ DATASET = "Dataset"
 COLUMN = "Column"
 
 
+@dataclass(frozen=True)
+class ColumnSchema:
+    name: str
+    data_type: str
+
+
+@dataclass(frozen=True)
+class DatasetSchema:
+    """Immutable dataset schema, retaining field order and repeated names."""
+
+    name: str
+    file_path: Optional[str]
+    columns: Tuple[ColumnSchema, ...]
+
+
 @dataclass
 class Symbol:
     """One entry in the symbol table."""
@@ -126,6 +141,20 @@ class SymbolTable:
     def datasets(self) -> Iterator[Symbol]:
         """Iterate over loaded dataset symbols."""
         return iter(self._datasets.values())
+
+    def snapshot_dataset(self, name: str) -> Optional[DatasetSchema]:
+        """Copy a dataset's current schema without exposing mutable symbols."""
+        dataset = self.lookup(name)
+        if dataset is None:
+            return None
+        return DatasetSchema(
+            name=dataset.name,
+            file_path=dataset.file_path,
+            columns=tuple(
+                ColumnSchema(name, dataset.columns[name].data_type)
+                for name in dataset.column_order
+            ),
+        )
 
     def replace_columns(
         self, dataset_name: str, columns: Dict[str, str], column_order: Optional[List[str]] = None,

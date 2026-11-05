@@ -71,6 +71,67 @@ success. `result.datasets` contains dataset names, resolved CSV paths and ordere
 Semantic errors retain the last valid schemas; lexical/syntax errors return no
 schemas. Each call reads current CSV schemas and starts with fresh analysis state.
 
+`result.statements` contains immutable before/after schemas for each statement's
+named dataset, captured during the same semantic pass. Entries include
+`statement_index` (zero-based within the document version), `source_range`,
+`dataset_name`, `is_valid`, `before`, and `after`. Ranges start at the statement
+keyword and end just after its semicolon, using one-based lines and zero-based
+Python character columns. Repeated columns retain their order and multiplicity.
+Missing datasets have schema `None`; LOAD has no input schema, and a failed
+statement has equal input/output schemas. Later transformations and reanalysis
+cannot change earlier snapshots.
+
+```python
+schema = result.schema_at(line=3, column=8)  # Input of the containing statement
+output = result.schema_at(line=3, column=8, phase="after")
+statement = result.statement_at(line=3, column=8)  # Range and validation status
+```
+
+Position lookup uses only the containing statement's dataset and returns `None`
+outside statement ranges (including whitespace between statements and EOF).
+Lexical/syntax failures have no statement snapshots. The result and its nested
+snapshots can be serialized with `json.dumps(dataclasses.asdict(result))`;
+statement identifiers do not depend on Python object identities.
+
+For incomplete buffers, use the separate cursor API:
+
+```python
+from src.editor import analyze_cursor
+
+context = analyze_cursor(text, "examples/program.dl", 8, line=3, column=8)
+schema = context.input_schema
+active = context.active_statement  # Kind, range, dataset name, completeness
+keywords = context.keywords
+datasets = context.dataset_names
+```
+
+The cursor API checks complete statements before the active statement using
+the existing semantic analyzer. `context.prefix` contains that checked prefix's
+diagnostics and immutable snapshots. The active statement contributes no schema
+changes or semantic diagnostics. Its input schema reflects the current buffer
+at its start, even when later statements transform the dataset. Coordinates use
+the same line/column convention; positions outside the buffer raise `ValueError`.
+
+SELECT column assistance can resolve a dataset from a later FROM clause in the
+same statement, including multiline input and an empty column slot at the
+cursor. Without such a clause, `input_schema` is `None`; keyword and known-dataset
+assistance is available without choosing a default dataset. Statement boundaries
+come from lexer tokens, so semicolons inside strings/comments do not split them.
+Unfinished strings and keyword fragments at the cursor remain editor input.
+
+An earlier syntax/lexical error stops schema propagation at the last parsed
+statement. `schema_reliable` becomes false and `input_schema` is suppressed;
+later statements produce no dependent semantic diagnostics. Known datasets in
+the reliable prefix remain available through `dataset_names`. Every call uses
+fresh text, CSV schemas and state. Strict document analysis and compilation
+continue to reject incomplete input.
+
+The VS Code extension connects through `python -u -m src.editor.bridge`: one
+UTF-8 JSON request on stdin, one response on stdout, and logs on stderr. It sends
+unsaved text, debounces edits, cancels obsolete requests, and rejects stale
+document versions. See the [extension setup and protocol](datalang-vscode/README.md)
+for interpreter/backend configuration, dependencies, and request examples.
+
 Aggregation supports one function and an optional single grouping column:
 
 ```text

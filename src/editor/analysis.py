@@ -12,9 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from src.ast import Program, Statement
 from src.lexer.lexer import Lexer, TokenType
 from src.parser.parser import ParseError, Parser
 from src.semantic.semantic import SemanticAnalysisError, SemanticAnalyzer
+from src.symbol_table.symbol_table import ColumnSchema, DatasetSchema
 
 
 @dataclass(frozen=True)
@@ -29,18 +31,37 @@ class Diagnostic:
 
 
 @dataclass(frozen=True)
-class ColumnSchema:
-    name: str
-    data_type: str
+class SourceRange:
+    """Half-open statement range, including its terminating semicolon."""
+
+    start_line: int
+    start_column: int
+    end_line: int
+    end_column: int
+
+    def contains(self, line: int, column: int) -> bool:
+        return (
+            line >= 1 and column >= 0
+            and (self.start_line, self.start_column) <= (line, column)
+            < (self.end_line, self.end_column)
+        )
 
 
 @dataclass(frozen=True)
-class DatasetSchema:
-    """A dataset's final checked schema, retaining column order and repeats."""
+class StatementSchemaSnapshot:
+    """Checked schema transition for one statement's named dataset.
 
-    name: str
-    file_path: str | None
-    columns: tuple[ColumnSchema, ...]
+    ``statement_index`` is zero-based and local to this document version.
+    Missing/unloaded datasets have no schema. Invalid statements retain their
+    input schema as output and set ``is_valid`` to false.
+    """
+
+    statement_index: int
+    source_range: SourceRange
+    dataset_name: str | None
+    before: DatasetSchema | None
+    after: DatasetSchema | None
+    is_valid: bool
 
 
 @dataclass(frozen=True)
@@ -57,10 +78,35 @@ class AnalysisResult:
     document_version: int
     diagnostics: tuple[Diagnostic, ...] = ()
     datasets: tuple[DatasetSchema, ...] = ()
+    statements: tuple[StatementSchemaSnapshot, ...] = ()
 
     @property
     def ok(self) -> bool:
         return not self.diagnostics
+
+    def statement_at(self, line: int, column: int) -> StatementSchemaSnapshot | None:
+        """Find the containing statement; trivia outside statements returns None."""
+        return next(
+            (statement for statement in self.statements if statement.source_range.contains(line, column)),
+            None,
+        )
+
+    def schema_at(
+        self, line: int, column: int, *, phase: Literal["before", "after"] = "before",
+    ) -> DatasetSchema | None:
+        """Return the containing statement's dataset schema at its input/output.
+
+        Input is the default so references use the columns available when that
+        statement runs. LOAD has no input schema. Output of an invalid statement
+        equals its input. Positions outside statements return None; no dataset
+        is guessed in whitespace/comments between statements or at EOF.
+        """
+        if phase not in {"before", "after"}:
+            raise ValueError("phase must be 'before' or 'after'")
+        statement = self.statement_at(line, column)
+        if statement is None:
+            return None
+        return statement.before if phase == "before" else statement.after
 
 
 def analyze_document(
@@ -98,9 +144,38 @@ def analyze_document(
         diagnostic = Diagnostic(stage, exc.message, exc.line, exc.column)
         return AnalysisResult(str(path), document_version, (diagnostic,))
 
+    return _analyze_program(program, path, document_version)
+
+
+def _analyze_program(program: Program, path: Path, document_version: int) -> AnalysisResult:
+    """Analyze an already parsed program through the shared semantic pass."""
+    statements = []
+    diagnostics = ()
+
+    def record_statement(
+        statement: Statement,
+        dataset_name: str | None,
+        before: DatasetSchema | None,
+        after: DatasetSchema | None,
+        is_valid: bool,
+    ) -> None:
+        # Parser statement ranges use token positions, including multiline
+        # statements and same-line statements without scanning source text.
+        assert statement.end_line is not None and statement.end_column is not None
+        statements.append(StatementSchemaSnapshot(
+            statement_index=len(statements),
+            source_range=SourceRange(
+                statement.line, statement.column, statement.end_line, statement.end_column,
+            ),
+            dataset_name=dataset_name,
+            before=before,
+            after=after,
+            is_valid=is_valid,
+        ))
+
     analyzer = SemanticAnalyzer(source_dir=path.parent)
     try:
-        analyzer.analyze(program)
+        analyzer.analyze(program, on_statement=record_statement)
     except SemanticAnalysisError as exc:
         diagnostics = tuple(
             Diagnostic("semantic", error.message, error.line, error.column)
@@ -108,14 +183,8 @@ def analyze_document(
         )
 
     datasets = tuple(
-        DatasetSchema(
-            name=dataset.name,
-            file_path=dataset.file_path,
-            columns=tuple(
-                ColumnSchema(name, dataset.columns[name].data_type)
-                for name in dataset.column_order
-            ),
-        )
+        schema
         for dataset in analyzer.symbol_table.datasets()
+        if (schema := analyzer.symbol_table.snapshot_dataset(dataset.name)) is not None
     )
-    return AnalysisResult(str(path), document_version, diagnostics, datasets)
+    return AnalysisResult(str(path), document_version, diagnostics, datasets, tuple(statements))
