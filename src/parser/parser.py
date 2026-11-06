@@ -47,11 +47,12 @@ a column list, distinguishing it from SELECT.
 from dataclasses import dataclass, field
 import sys
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, TypeVar, Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.lexer.lexer import Token, TokenType, Lexer
+from src.source import SourceSpan
 
 
 # ============================================================================
@@ -68,6 +69,8 @@ class ASTNode:
     # Keep existing positional constructors and AST equality unchanged.
     end_line: Optional[int] = field(default=None, init=False, compare=False, repr=False)
     end_column: Optional[int] = field(default=None, init=False, compare=False, repr=False)
+    # Optional metadata must not change positional constructors or AST equality.
+    spans: dict[str, SourceSpan] = field(default_factory=dict, init=False, compare=False, repr=False)
 
 
 @dataclass
@@ -238,6 +241,17 @@ class Value(ASTNode):
 Statement = Union[LoadStmt, SelectStmt, FilterStmt, PlotStmt, AggregateStmt, SortStmt]
 
 
+_Node = TypeVar("_Node", bound=ASTNode)
+
+
+def _with_spans(node: _Node, **tokens: Optional[Token]) -> _Node:
+    node.spans = {
+        name: token.span or SourceSpan.from_text(token.line, token.column, token.lexeme)
+        for name, token in tokens.items() if token is not None
+    }
+    return node
+
+
 # ============================================================================
 # PARSER CLASS
 # ============================================================================
@@ -361,10 +375,10 @@ class Parser:
         self._consume(TokenType.FROM, "Expected 'FROM' after sorting column and optional ASC/DESC")
         source = self._consume(TokenType.ID, "Expected a dataset identifier after 'FROM'")
         self._consume(TokenType.SEMI, "Expected ';' to terminate SORT statement")
-        return SortStmt(
+        return _with_spans(SortStmt(
             line=start.line, column=start.column, column_name=column.lexeme,
             source=source.lexeme, ascending=ascending,
-        )
+        ), column_name=column, source=source)
 
     def _parse_aggregate_stmt(self) -> AggregateStmt:
         start = self._consume(TokenType.AGGREGATE, "Expected 'AGGREGATE'")
@@ -382,12 +396,12 @@ class Parser:
         if self._current_token().type == TokenType.GROUP:
             self._advance()
             self._consume(TokenType.BY, "Expected 'BY' after 'GROUP'")
-            group_by = self._consume(TokenType.ID, "Expected a grouping column after 'BY'").lexeme
+            group_by = self._consume(TokenType.ID, "Expected a grouping column after 'BY'")
         self._consume(TokenType.SEMI, "Expected ';' to terminate AGGREGATE statement")
-        return AggregateStmt(
+        return _with_spans(AggregateStmt(
             line=start.line, column=start.column, function=function.type.name,
-            column_name=column.lexeme, source=source.lexeme, group_by=group_by,
-        )
+            column_name=column.lexeme, source=source.lexeme, group_by=group_by.lexeme if group_by else None,
+        ), function=function, column_name=column, source=source, group_by=group_by)
 
     # ------------------------------------------------------------------ #
     # Rule (8): LoadStmt -> LOAD STRING_LIT AS ID SEMI
@@ -409,12 +423,12 @@ class Parser:
         )
         self._consume(TokenType.SEMI, "Expected ';' to terminate LOAD statement")
 
-        return LoadStmt(
+        return _with_spans(LoadStmt(
             file_path=path_token.literal,
             variable=var_token.lexeme,
             line=start.line,
             column=start.column,
-        )
+        ), file_path=path_token, variable=var_token)
 
     # ------------------------------------------------------------------ #
     # Rule (9): SelectStmt -> SELECT ColumnList FROM ID SEMI
@@ -427,19 +441,21 @@ class Parser:
         start = self._current_token()
 
         self._consume(TokenType.SELECT, "Expected 'SELECT'")
+        column_start = self.position
         columns = self._parse_column_list()
+        column_tokens = self.tokens[column_start:self.position:2]
         self._consume(TokenType.FROM, "Expected 'FROM' after column list")
         source_token = self._consume(
             TokenType.ID, "Expected a dataset identifier after 'FROM'"
         )
         self._consume(TokenType.SEMI, "Expected ';' to terminate SELECT statement")
 
-        return SelectStmt(
+        return _with_spans(SelectStmt(
             columns=columns,
             source=source_token.lexeme,
             line=start.line,
             column=start.column,
-        )
+        ), source=source_token, **{f"columns[{i}]": token for i, token in enumerate(column_tokens)})
 
     # ------------------------------------------------------------------ #
     # Rule (10): FilterStmt -> FILTER ID WHERE Condition SEMI
@@ -459,12 +475,12 @@ class Parser:
         condition = self._parse_condition()
         self._consume(TokenType.SEMI, "Expected ';' to terminate FILTER statement")
 
-        return FilterStmt(
+        return _with_spans(FilterStmt(
             dataset=dataset_token.lexeme,
             condition=condition,
             line=start.line,
             column=start.column,
-        )
+        ), dataset=dataset_token)
 
     # ------------------------------------------------------------------ #
     # Rule (11): VisualizeStmt -> VISUALIZE ChartType OF ID FROM ID SEMI
@@ -477,6 +493,7 @@ class Parser:
         start = self._current_token()
 
         self._consume(TokenType.VISUALIZE, "Expected 'VISUALIZE'")
+        chart_token = self._current_token()
         chart_type = self._parse_chart_type()
         self._consume(TokenType.OF, "Expected 'OF' after chart type")
         column_token = self._consume(
@@ -490,13 +507,13 @@ class Parser:
             TokenType.SEMI, "Expected ';' to terminate VISUALIZE statement"
         )
 
-        return PlotStmt(
+        return _with_spans(PlotStmt(
             chart_type=chart_type,
             column_name=column_token.lexeme,
             source=source_token.lexeme,
             line=start.line,
             column=start.column,
-        )
+        ), chart_type=chart_token, column_name=column_token, source=source_token)
 
     # ------------------------------------------------------------------ #
     # Rules (12-15): ChartType -> BAR | LINE | SCATTER | PIE
@@ -625,13 +642,13 @@ class Parser:
         operator = self._parse_relop()
         value = self._parse_value()
 
-        return Comparison(
+        return _with_spans(Comparison(
             column_name=column_token.lexeme,
             operator=operator,
             value=value,
             line=column_token.line,
             column=column_token.column,
-        )
+        ), column_name=column_token)
 
     # ------------------------------------------------------------------ #
     # Rules (26-31): RelOp -> EQ | NEQ | LT | GT | LE | GE
@@ -685,12 +702,12 @@ class Parser:
 
         if token.type in type_mapping:
             self._advance()
-            return Value(
+            return _with_spans(Value(
                 type=type_mapping[token.type],
                 literal=token.literal,
                 line=token.line,
                 column=token.column,
-            )
+            ), literal=token)
 
         self._error(
             "Expected a value (integer, float, or string literal), got "
@@ -705,7 +722,7 @@ class Parser:
         """Return the token at the cursor, or the trailing EOF token."""
         token = self.tokens[min(self.position, len(self.tokens) - 1)]
         if token.type == TokenType.ERROR:
-            raise ParseError(token.lexeme, token.line, token.column, stage="Lexical")
+            raise ParseError(token.lexeme, token.line, token.column, stage="Lexical", span=token.span)
         return token
 
     def _advance(self) -> Token:
@@ -736,14 +753,15 @@ class Parser:
             ParseError: Always.
         """
         token = self._current_token()
-        raise ParseError(message, token.line, token.column)
+        raise ParseError(message, token.line, token.column, span=token.span)
 
 
 class ParseError(Exception):
     """Raised when the parser encounters a syntax (or embedded lexical) error."""
 
-    def __init__(self, message: str, line=None, column=None, stage="Syntax"):
+    def __init__(self, message: str, line=None, column=None, stage="Syntax", *, span=None):
         self.message, self.line, self.column, self.stage = message, line, column, stage
+        self.span = span
         location = f" at line {line}, column {column}" if line is not None else ""
         super().__init__(f"{stage} error{location}: {message}")
 

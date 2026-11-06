@@ -8,8 +8,10 @@ delimiters with comprehensive error reporting.
 
 from enum import Enum, auto
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
+
+from src.source import SourceSpan
 
 
 class TokenType(Enum):
@@ -96,6 +98,7 @@ class Token:
     literal: Optional[object]
     line: int
     column: int
+    span: Optional[SourceSpan] = field(default=None, init=False, compare=False, repr=False)
     
     def __repr__(self) -> str:
         """Pretty-print token information for debugging."""
@@ -129,6 +132,7 @@ class Lexer:
         self.tokens: List[Token] = []  # Accumulated tokens
         self._token_line = 1
         self._token_column = 0
+        self._token_start = 0
         
         # Keywords mapping: maps lowercase keywords to their token types
         self.keywords = {
@@ -171,6 +175,7 @@ class Lexer:
             self._scan_token()
         
         self._token_line, self._token_column = self.line, self.column
+        self._token_start = self.position
         self._add_token(TokenType.EOF, '')
         return self.tokens
     
@@ -191,6 +196,7 @@ class Lexer:
         
         current = self._current_char()
         self._token_line, self._token_column = self.line, self.column
+        self._token_start = self.position
         
         # Two-character operators: ==, !=, <=, >=
         if current in '=!<>':
@@ -411,6 +417,7 @@ class Lexer:
         Any other character is reported as a lexical error with a helpful message.
         """
         current = self._current_char()
+        self._advance()
         
         if current == ';':
             self._add_token(TokenType.SEMI, ';')
@@ -423,9 +430,7 @@ class Lexer:
         else:
             # Unexpected character
             self._add_error_token(f'Unexpected character: {current}')
-        
-        self._advance()
-    
+
     def _current_char(self) -> str:
         """
         Get the character at the current position.
@@ -480,6 +485,9 @@ class Lexer:
             line=self._token_line,
             column=self._token_column
         )
+        token.span = SourceSpan.from_text(
+            self._token_line, self._token_column, self.source[self._token_start:self.position],
+        )
         self.tokens.append(token)
     
     def _add_error_token(self, message: str) -> None:
@@ -498,6 +506,9 @@ class Lexer:
             literal=None,
             line=self._token_line,
             column=self._token_column
+        )
+        token.span = SourceSpan.from_text(
+            self._token_line, self._token_column, self.source[self._token_start:self.position],
         )
         self.tokens.append(token)
 

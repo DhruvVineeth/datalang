@@ -112,7 +112,7 @@ FILTER sales WHERE
 
     assert not result.ok
     assert [(error.stage, error.line, error.column) for error in result.diagnostics] == [
-        ("semantic", 3, 0), ("semantic", 5, 4), ("semantic", 6, 4)
+        ("semantic", 3, 7), ("semantic", 5, 4), ("semantic", 6, 4)
     ]
     assert "quantity" in result.diagnostics[0].message
     assert "missing" in result.diagnostics[1].message
@@ -133,7 +133,7 @@ def test_csv_failures_are_semantic_diagnostics(document, contents, message):
 
     assert not result.ok and result.datasets == ()
     error, = result.diagnostics
-    assert (error.stage, error.line, error.column) == ("semantic", 2, 2)
+    assert (error.stage, error.line, error.column) == ("semantic", 2, 7)
     assert "broken" in error.message and "bad.csv" in error.message
     assert message in error.message
 

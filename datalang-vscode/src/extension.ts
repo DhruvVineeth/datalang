@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { AnalysisController, AnalysisSettings, DocumentSnapshot } from './analysisController';
 import { BackendClient } from './backendClient';
+import { toDiagnostic } from './diagnostics';
 
 let controller: AnalysisController | undefined;
 
@@ -20,19 +21,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	controller = new AnalysisController(client, snapshot => !!currentDocument(snapshot), (snapshot, result) => {
 		const document = currentDocument(snapshot);
 		if (!document) { return; }
-		diagnostics.set(document.uri, result.analysis.diagnostics.map(error => {
-			const line = Math.min(Math.max((error.line ?? 1) - 1, 0), document.lineCount - 1);
-			const text = document.lineAt(line).text;
-			// Python uses code points; VS Code uses UTF-16 code units.
-			const column = [...text].slice(0, error.column ?? 0).join('').length;
-			const width = text.codePointAt(column) === undefined ? 0 : String.fromCodePoint(text.codePointAt(column)!).length;
-			const diagnostic = new vscode.Diagnostic(
-				new vscode.Range(line, column, line, column + width), error.message, vscode.DiagnosticSeverity.Error,
-			);
-			diagnostic.source = 'DataLang';
-			diagnostic.code = error.stage;
-			return diagnostic;
-		}));
+		diagnostics.set(document.uri, result.analysis.diagnostics.map(error => toDiagnostic(document, error)));
 	}, (snapshot, error) => {
 		output.appendLine(`[${snapshot.uri} version ${snapshot.version}] ${error.message}`);
 		if (!reportedErrors.has(error.message)) {
@@ -41,7 +30,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		}
 	});
 	const analysis = controller;
-	const schedule = (document: vscode.TextDocument) => {
+	const schedule = (document: vscode.TextDocument, debounce = true) => {
 		if (document.languageId !== 'datalang' || document.isClosed
 			|| !['file', 'untitled'].includes(document.uri.scheme)) {
 			analysis.cancel(document.uri.toString());
@@ -58,7 +47,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		const settings: AnalysisSettings = {
 			pythonExecutable: config.get('pythonExecutable', 'python'),
 			backendPath: config.get('backendPath', ''),
-			analysisDebounceMs: config.get('analysisDebounceMs', 300),
+			analysisDebounceMs: debounce ? config.get('analysisDebounceMs', 300) : 0,
 			analysisTimeoutMs: config.get('analysisTimeoutMs', 10000),
 		};
 		const folder = vscode.workspace.getWorkspaceFolder(document.uri) ?? vscode.workspace.workspaceFolders?.[0];
@@ -69,11 +58,13 @@ export function activate(context: vscode.ExtensionContext): void {
 			version: document.version, text: document.getText(),
 		}, settings);
 	};
-	const scheduleAll = () => vscode.workspace.textDocuments.forEach(schedule);
+	const scheduleAll = () => vscode.workspace.textDocuments.forEach(document => schedule(document, false));
 	context.subscriptions.push(
 		{ dispose: () => { disposed = true; analysis.dispose(); } }, diagnostics, output,
-		vscode.workspace.onDidOpenTextDocument(schedule),
-		vscode.workspace.onDidChangeTextDocument(event => schedule(event.document)),
+		vscode.workspace.onDidOpenTextDocument(document => schedule(document, false)),
+		vscode.workspace.onDidChangeTextDocument(event => {
+			if (event.contentChanges.length) { schedule(event.document); }
+		}),
 		vscode.workspace.onDidCloseTextDocument(document => {
 			analysis.cancel(document.uri.toString());
 			diagnostics.delete(document.uri);

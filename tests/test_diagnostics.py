@@ -155,7 +155,7 @@ def test_csv_reader_errors_are_semantic_diagnostics(source_dir, monkeypatch, cap
     monkeypatch.setattr("src.main.ExecutionEngine", forbidden)
     assert compile_source('\n  LOAD "oversized.csv" AS data;', source_dir) == 1
     output = capsys.readouterr().out
-    assert "Semantic error at line 2, column 2:" in output
+    assert "Semantic error at line 2, column 7:" in output
     assert "oversized.csv" in output and "field" in output
 
 
@@ -165,7 +165,7 @@ def test_schema_permission_errors_name_dataset_and_csv(source_dir, monkeypatch, 
     monkeypatch.setattr("src.semantic.semantic.inspect_csv_schema", denied)
     assert compile_source('\n  LOAD "data.csv" AS data;', source_dir) == 1
     output = capsys.readouterr().out
-    assert "Semantic error at line 2, column 2:" in output
+    assert "Semantic error at line 2, column 7:" in output
     assert "dataset 'data'" in output and "data.csv" in output and "access denied" in output
 
 

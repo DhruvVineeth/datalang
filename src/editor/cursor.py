@@ -107,7 +107,9 @@ def _probe(tokens: list[Token]) -> tuple[_ContextParser, ParseError | None]:
 
 def _diagnostic(error: ParseError) -> Diagnostic:
     stage = "lexical" if error.stage == "Lexical" else "syntax"
-    return Diagnostic(stage, error.message, error.line, error.column)
+    return Diagnostic(stage, error.message, error.line, error.column,
+                      end_line=error.span.end_line if error.span else None,
+                      end_column=error.span.end_column if error.span else None)
 
 
 def _offset(text: str, line: int, column: int) -> int:

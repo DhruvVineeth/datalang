@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
 import { BackendClient, BackendSettings, RequestCancelledError } from '../backendClient';
-import { AnalysisRequest, AnalysisResponse } from '../backendProtocol';
+import { AnalysisRequest, AnalysisResponse, parseResponse } from '../backendProtocol';
 
 const settings: BackendSettings = {
 	pythonExecutable: '/configured Python/python',
@@ -28,6 +28,29 @@ function response(): AnalysisResponse {
 		}, cursor: null },
 	};
 }
+
+test('protocol accepts optional exclusive diagnostic ends and legacy start-only locations', () => {
+	for (const end of [{}, { end_line: null, end_column: null }, { end_line: 2, end_column: 0 }]) {
+		const value = response();
+		value.result!.analysis.diagnostics = [{ stage: 'syntax', severity: 'error', message: 'Expected FROM',
+			line: 1, column: 4, ...end }];
+		assert.deepEqual(parseResponse(JSON.stringify(value), request), value);
+	}
+});
+
+test('protocol rejects malformed, incomplete or reversed diagnostic ends', () => {
+	for (const end of [
+		{ end_line: 1 }, { end_column: 6 }, { end_line: 0, end_column: 6 },
+		{ end_line: 1, end_column: -1 }, { end_line: 1, end_column: 3 },
+		{ end_line: 1.5, end_column: 6 }, { end_line: '1', end_column: 6 },
+	]) {
+		const value = response();
+		const diagnostics = [{ stage: 'syntax', severity: 'error', message: 'Expected FROM', line: 1, column: 4, ...end }];
+		const invalid = { ...value, result: { ...value.result,
+			analysis: { ...value.result!.analysis, diagnostics } } };
+		assert.throws(() => parseResponse(JSON.stringify(invalid), request), /Invalid analysis result/);
+	}
+});
 
 class FakeChild extends EventEmitter {
 	stdin = new PassThrough();

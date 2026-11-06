@@ -15,6 +15,9 @@ export interface BackendDiagnostic {
 	line: number | null;
 	column: number | null;
 	severity: 'error';
+	/** Exclusive end in compiler coordinates. Optional for older backends. */
+	end_line?: number | null;
+	end_column?: number | null;
 }
 
 export interface AnalysisPayload {
@@ -45,7 +48,13 @@ function object(value: unknown): value is Record<string, unknown> {
 }
 
 function diagnostic(value: unknown): value is BackendDiagnostic {
-	return object(value)
+	if (!object(value)) { return false; }
+	const hasEnd = (value.end_line ?? null) !== null || (value.end_column ?? null) !== null;
+	return (!hasEnd || (Number.isInteger(value.end_line) && Number.isInteger(value.end_column)
+		&& (value.end_line as number) >= 1 && (value.end_column as number) >= 0
+		&& Number.isInteger(value.line) && Number.isInteger(value.column)
+		&& ((value.end_line as number) > (value.line as number)
+			|| (value.end_line === value.line && (value.end_column as number) >= (value.column as number)))))
 		&& ['lexical', 'syntax', 'semantic'].includes(value.stage as string)
 		&& typeof value.message === 'string' && value.severity === 'error'
 		&& (value.line === null || (Number.isInteger(value.line) && (value.line as number) >= 1))

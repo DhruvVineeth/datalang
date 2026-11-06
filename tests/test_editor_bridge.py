@@ -78,6 +78,24 @@ def test_source_errors_are_successful_analysis_responses(bridge_request):
     assert response["result"]["analysis"]["diagnostics"][0]["stage"] == "semantic"
 
 
+@pytest.mark.parametrize("fragment,target,stage", [
+    ("SELECT missing FROM sales;", "missing", "semantic"),
+    ("SELECT label FROM sales; SELECT amount FROM sales;", "amount", "semantic"),
+    ('FILTER sales WHERE amount > "two";', '"two"', "semantic"),
+    ('LOAD "missing.csv" AS absent;', '"missing.csv"', "semantic"),
+    ("SELECT label WRONG sales;", "WRONG", "syntax"),
+])
+def test_diagnostic_spans_survive_the_real_json_protocol(bridge_request, fragment, target, stage):
+    prefix = 'LOAD "semi;data.csv" AS sales; FILTER sales WHERE label == "😀"; '
+    bridge_request["text"] = prefix + fragment
+    process = invoke(bridge_request)
+    assert process.returncode == 0 and process.stderr == ""
+    error, = json.loads(process.stdout)["result"]["analysis"]["diagnostics"]
+    assert error["stage"] == stage
+    assert error["line"] == error["end_line"] == 1
+    assert bridge_request["text"][error["column"]:error["end_column"]] == target
+
+
 def test_unicode_and_unpaired_editor_surrogates_remain_valid_json(bridge_request):
     bridge_request["text"] = "@ \U0001f600 \ud800"
     process = invoke(bridge_request)

@@ -42,6 +42,7 @@ from src.symbol_table.symbol_table import (
     inspect_csv_schema,
     is_numeric_type,
 )
+from src.source import SourceSpan
 
 
 # Relational operators that only make sense on numeric columns.
@@ -68,10 +69,12 @@ StatementObserver = Callable[
 class SemanticError(Exception):
     """A single semantic error with an optional source location."""
 
-    def __init__(self, message: str, line: Optional[int] = None, column: Optional[int] = None):
+    def __init__(self, message: str, line: Optional[int] = None, column: Optional[int] = None,
+                 *, span: Optional[SourceSpan] = None):
         self.message = message
-        self.line = line
-        self.column = column
+        self.span = span
+        self.line = span.line if span else line
+        self.column = span.column if span else column
         super().__init__(self.format())
 
     def format(self) -> str:
@@ -177,6 +180,7 @@ class SemanticAnalyzer:
                 f"Dataset '{stmt.variable}' is already loaded",
                 stmt.line,
                 stmt.column,
+                span=stmt.spans.get("variable"),
             )
             return
 
@@ -188,12 +192,14 @@ class SemanticAnalyzer:
                 f"Cannot load dataset '{stmt.variable}': file '{stmt.file_path}' not found",
                 stmt.line,
                 stmt.column,
+                span=stmt.spans.get("file_path"),
             )
             return
         except (ValueError, OSError, UnicodeError, csv.Error) as exc:
             self._error(
                 f"Cannot load dataset '{stmt.variable}' from '{stmt.file_path}': {exc}",
                 stmt.line, stmt.column,
+                span=stmt.spans.get("file_path"),
             )
             return
 
@@ -210,11 +216,12 @@ class SemanticAnalyzer:
     # ------------------------------------------------------------------ #
 
     def _check_select(self, stmt: SelectStmt) -> None:
-        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column):
+        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column, span=stmt.spans.get("source")):
             return
         valid = [
-            self._require_column(stmt.source, column_name, stmt.line, stmt.column, allow_ambiguous=True)
-            for column_name in stmt.columns
+            self._require_column(stmt.source, column_name, stmt.line, stmt.column, allow_ambiguous=True,
+                                 span=stmt.spans.get(f"columns[{i}]"))
+            for i, column_name in enumerate(stmt.columns)
         ]
         if all(valid):
             input_order = self.symbol_table.lookup(stmt.source).column_order
@@ -228,15 +235,17 @@ class SemanticAnalyzer:
             self.symbol_table.replace_columns(stmt.source, columns, output_order)
 
     def _check_sort(self, stmt: SortStmt) -> None:
-        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column):
+        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column, span=stmt.spans.get("source")):
             return
-        if not self._require_column(stmt.source, stmt.column_name, stmt.line, stmt.column):
+        if not self._require_column(stmt.source, stmt.column_name, stmt.line, stmt.column,
+                                    span=stmt.spans.get("column_name")):
             return
         column = self.symbol_table.lookup_column(stmt.source, stmt.column_name)
         if column.data_type not in {INTEGER, NUMERIC, STRING}:
             self._error(
                 f"SORT cannot order column '{stmt.column_name}' of type {column.data_type}",
                 stmt.line, stmt.column,
+                span=stmt.spans.get("column_name"),
             )
             return
         self.symbol_table.statement_schemas[id(stmt)] = {
@@ -245,14 +254,17 @@ class SemanticAnalyzer:
         }
 
     def _check_aggregate(self, stmt: AggregateStmt) -> None:
-        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column):
+        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column, span=stmt.spans.get("source")):
             return
         if stmt.function not in {"SUM", "AVG", "COUNT", "MIN", "MAX"}:
-            self._error(f"Unsupported aggregate function '{stmt.function}'", stmt.line, stmt.column)
+            self._error(f"Unsupported aggregate function '{stmt.function}'", stmt.line, stmt.column,
+                        span=stmt.spans.get("function"))
             return
-        valid = self._require_column(stmt.source, stmt.column_name, stmt.line, stmt.column)
+        valid = self._require_column(stmt.source, stmt.column_name, stmt.line, stmt.column,
+                                     span=stmt.spans.get("column_name"))
         if stmt.group_by is not None:
-            valid = self._require_column(stmt.source, stmt.group_by, stmt.line, stmt.column) and valid
+            valid = self._require_column(stmt.source, stmt.group_by, stmt.line, stmt.column,
+                                         span=stmt.spans.get("group_by")) and valid
         if not valid:
             return
         target = self.symbol_table.lookup_column(stmt.source, stmt.column_name)
@@ -260,11 +272,13 @@ class SemanticAnalyzer:
             self._error(
                 f"{stmt.function} requires a numeric column: '{stmt.column_name}' is {target.data_type}",
                 stmt.line, stmt.column,
+                span=stmt.spans.get("column_name"),
             )
             return
         result_name = f"{stmt.function.lower()}_{stmt.column_name}"
         if result_name == stmt.group_by:
-            self._error(f"Aggregate output name '{result_name}' conflicts with grouping column", stmt.line, stmt.column)
+            self._error(f"Aggregate output name '{result_name}' conflicts with grouping column", stmt.line, stmt.column,
+                        span=stmt.spans.get("group_by"))
             return
         result_type = target.data_type
         if stmt.function == "COUNT":
@@ -283,7 +297,7 @@ class SemanticAnalyzer:
     # ------------------------------------------------------------------ #
 
     def _check_filter(self, stmt: FilterStmt) -> None:
-        if not self._require_loaded_dataset(stmt.dataset, stmt.line, stmt.column):
+        if not self._require_loaded_dataset(stmt.dataset, stmt.line, stmt.column, span=stmt.spans.get("dataset")):
             return
         try:
             self._check_condition(stmt.dataset, stmt.condition)
@@ -303,7 +317,8 @@ class SemanticAnalyzer:
             self._check_condition(dataset, condition.right)
 
     def _check_comparison(self, dataset: str, comparison: Comparison) -> None:
-        if not self._require_column(dataset, comparison.column_name, comparison.line, comparison.column):
+        if not self._require_column(dataset, comparison.column_name, comparison.line, comparison.column,
+                                    span=comparison.spans.get("column_name")):
             return
         column = self.symbol_table.lookup_column(dataset, comparison.column_name)
 
@@ -318,6 +333,7 @@ class SemanticAnalyzer:
                     f"'{comparison.column_name}' of type {column.data_type}",
                     comparison.line,
                     comparison.column,
+                    span=comparison.spans.get("column_name"),
                 )
                 return
             if value_kind == "STRING":
@@ -326,6 +342,7 @@ class SemanticAnalyzer:
                     f"is {column.data_type} but the comparison value is a string",
                     comparison.line,
                     comparison.column,
+                    span=comparison.value.spans.get("literal"),
                 )
             return
 
@@ -349,6 +366,7 @@ class SemanticAnalyzer:
             f"is {column.data_type} but the comparison value is {value_label}",
             comparison.line,
             comparison.column,
+            span=comparison.value.spans.get("literal"),
         )
 
     # ------------------------------------------------------------------ #
@@ -357,9 +375,10 @@ class SemanticAnalyzer:
 
     def _check_plot(self, stmt: PlotStmt) -> None:
         if stmt.chart_type not in {"BAR", "LINE", "SCATTER"}:
-            self._error(f"Unsupported chart type '{stmt.chart_type}'", stmt.line, stmt.column)
+            self._error(f"Unsupported chart type '{stmt.chart_type}'", stmt.line, stmt.column,
+                        span=stmt.spans.get("chart_type"))
             return
-        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column):
+        if not self._require_loaded_dataset(stmt.source, stmt.line, stmt.column, span=stmt.spans.get("source")):
             return
 
         column = self.symbol_table.lookup_column(stmt.source, stmt.column_name)
@@ -369,10 +388,12 @@ class SemanticAnalyzer:
                 f"it does not exist in dataset '{stmt.source}'",
                 stmt.line,
                 stmt.column,
+                span=stmt.spans.get("column_name"),
             )
             return
 
-        if not self._require_column(stmt.source, stmt.column_name, stmt.line, stmt.column):
+        if not self._require_column(stmt.source, stmt.column_name, stmt.line, stmt.column,
+                                    span=stmt.spans.get("column_name")):
             return
 
         if stmt.chart_type in _NUMERIC_CHARTS and not is_numeric_type(column.data_type):
@@ -381,19 +402,22 @@ class SemanticAnalyzer:
                 f"{stmt.chart_type} chart: expected a numeric column, found {column.data_type}",
                 stmt.line,
                 stmt.column,
+                span=stmt.spans.get("column_name"),
             )
 
     # ------------------------------------------------------------------ #
     # Shared checks
     # ------------------------------------------------------------------ #
 
-    def _require_loaded_dataset(self, name: str, line: Optional[int], column: Optional[int]) -> bool:
+    def _require_loaded_dataset(self, name: str, line: Optional[int], column: Optional[int],
+                                *, span: Optional[SourceSpan] = None) -> bool:
         if self.symbol_table.has_dataset(name):
             return True
         self._error(
             f"Dataset '{name}' has not been loaded",
             line,
             column,
+            span=span,
         )
         return False
 
@@ -404,12 +428,14 @@ class SemanticAnalyzer:
         line: Optional[int],
         column: Optional[int],
         allow_ambiguous: bool = False,
+        *, span: Optional[SourceSpan] = None,
     ) -> bool:
         if self.symbol_table.column_exists(dataset, column_name):
             if not allow_ambiguous and self.symbol_table.lookup(dataset).column_order.count(column_name) > 1:
                 self._error(
                     f"Column '{column_name}' is ambiguous in dataset '{dataset}'",
                     line, column,
+                    span=span,
                 )
                 return False
             return True
@@ -417,8 +443,10 @@ class SemanticAnalyzer:
             f"Column '{column_name}' does not exist in dataset '{dataset}'",
             line,
             column,
+            span=span,
         )
         return False
 
-    def _error(self, message: str, line: Optional[int], column: Optional[int]) -> None:
-        self.errors.append(SemanticError(message, line, column))
+    def _error(self, message: str, line: Optional[int], column: Optional[int],
+               *, span: Optional[SourceSpan] = None) -> None:
+        self.errors.append(SemanticError(message, line, column, span=span))

@@ -28,6 +28,9 @@ class Diagnostic:
     line: int | None
     column: int | None
     severity: Literal["error"] = "error"
+    # Optional, exclusive end in compiler coordinates. Old callers need only a start.
+    end_line: int | None = None
+    end_column: int | None = None
 
 
 @dataclass(frozen=True)
@@ -130,7 +133,8 @@ def analyze_document(
     path = Path(document_path).resolve()
     tokens = Lexer(text).tokenize()
     diagnostics = tuple(
-        Diagnostic("lexical", token.lexeme, token.line, token.column)
+        Diagnostic("lexical", token.lexeme, token.line, token.column,
+                   end_line=token.span.end_line, end_column=token.span.end_column)
         for token in tokens
         if token.type == TokenType.ERROR
     )
@@ -141,7 +145,9 @@ def analyze_document(
         program = Parser(tokens).parse()
     except ParseError as exc:
         stage = "lexical" if exc.stage == "Lexical" else "syntax"
-        diagnostic = Diagnostic(stage, exc.message, exc.line, exc.column)
+        diagnostic = Diagnostic(stage, exc.message, exc.line, exc.column,
+                                end_line=exc.span.end_line if exc.span else None,
+                                end_column=exc.span.end_column if exc.span else None)
         return AnalysisResult(str(path), document_version, (diagnostic,))
 
     return _analyze_program(program, path, document_version)
@@ -178,7 +184,9 @@ def _analyze_program(program: Program, path: Path, document_version: int) -> Ana
         analyzer.analyze(program, on_statement=record_statement)
     except SemanticAnalysisError as exc:
         diagnostics = tuple(
-            Diagnostic("semantic", error.message, error.line, error.column)
+            Diagnostic("semantic", error.message, error.line, error.column,
+                       end_line=error.span.end_line if error.span else None,
+                       end_column=error.span.end_column if error.span else None)
             for error in exc.errors
         )
 

@@ -83,7 +83,7 @@ arguments such as `-m`, `-3`, or `wsl python`. Paths containing spaces work.
 For Remote/WSL development, install/configure Python and the repository in the
 extension host's environment, using that environment's filesystem paths.
 
-Trust the workspace and open a `.dl` document. Edits are debounced per document
+Trust the workspace and open a `.dl` document to analyze it immediately. Edits are debounced per document
 for 300 ms by default. Diagnostics appear in the editor and Problems panel.
 Relative LOAD paths resolve from the document's directory. Untitled DataLang
 buffers use the workspace folder as their relative-path base (or the backend
@@ -141,13 +141,22 @@ The bridge also accepts `method: "cursor"` with `position: {line, column}`.
 Positions use one-based lines and zero-based Python character columns. Its result
 contains the checked prefix in `analysis` and the active statement, input schema,
 grammar assistance, and reliability flag in `cursor`. The initial extension
-publisher uses strict `analyze` requests; it converts diagnostic columns to VS
-Code's UTF-16 positions.
+publisher uses strict `analyze` requests. Diagnostics have `stage`, `message`,
+`severity`, `line`, `column`, and optional exclusive `end_line`/`end_column`.
+Identifier errors underline the exact reference, type mismatches underline the
+incompatible literal or column, and CSV errors underline the quoted LOAD path.
+The extension converts both endpoints to VS Code's zero-based UTF-16 positions,
+including astral characters and combining marks. An editor position inside a
+surrogate pair converts to the start of that code point. Legacy diagnostics
+without an end select one code point; an unknown column selects the whole line.
+Positions outside the document are clamped, and EOF may have an empty range.
+See the [VS Code position API](https://code.visualstudio.com/api/references/vscode-api#Position).
 
 Edits, document closure, and configuration changes cancel obsolete work and
 terminate its process where possible. Late responses must still match the
 request identity and current document version before publication. Closing and
-reopening the same URI also invalidates pending work. Timers, abort listeners,
+reopening the same URI also invalidates pending work. Diagnostics clear immediately
+on an edit or close; a cancelled response cannot restore them. Timers, abort listeners,
 process streams, event subscriptions, and processes are disposed on shutdown.
 Responses larger than 16 MiB are rejected.
 
@@ -189,8 +198,11 @@ development window; highlighting should remain available.
 
 The generated TypeScript compiler, ESLint, npm scripts, and VS Code launch/watch
 tasks are retained. `npm run compile` writes `out/`; `npm run watch` rebuilds on
-changes; `npm run lint` checks TypeScript. `npm run test:unit` runs the bridge and
+changes; `npm run lint` checks TypeScript. `npm run test:unit` runs the bridge,
+Unicode position conversions, DiagnosticCollection lifecycle, and
 debounce/cancellation tests in Node without opening VS Code. From the repository
-root, `python -m pytest tests/test_editor_bridge.py -q` checks real Python
+root, `python -m pytest tests/test_editor_bridge.py tests/test_editor_diagnostic_spans.py -q` checks real Python
 stdin/stdout exchanges. `npm test` runs the generated VS Code
 extension test runner, whose first run may download VS Code and open a test window.
+The host tests also exercise real Python diagnostics; they use `python` on PATH.
+Set the `DATALANG_TEST_PYTHON` environment variable to use another interpreter.
